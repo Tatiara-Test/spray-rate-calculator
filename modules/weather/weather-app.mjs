@@ -25,15 +25,15 @@ const template = `
       </header>
 
       <section class="location-card" aria-labelledby="weather-location-name">
-        <div><span aria-hidden="true">?</span><div><h2 id="weather-location-name">No location selected</h2><p id="weather-location-detail">Choose a location when a live source is approved.</p></div></div>
+        <div><span aria-hidden="true">●</span><div><h2 id="weather-location-name">No location selected</h2><p id="weather-location-detail">Choose a location when a live source is approved.</p></div></div>
         <button id="change-location" type="button">Change</button>
       </section>
 
       <section id="weather-status" class="source-state" aria-live="polite"></section>
       <section id="forecast-view" hidden>
         <article class="current-card">
-          <div class="wind-now"><p>Current model forecast</p><strong id="current-wind">?</strong><span id="current-direction">?</span></div>
-          <div class="gust-now"><p>Gusts</p><strong id="current-gust">?</strong></div>
+          <div class="wind-now"><p>Current model forecast</p><strong id="current-wind">—</strong><span id="current-direction">—</span></div>
+          <div class="gust-now"><p>Gusts</p><strong id="current-gust">—</strong></div>
           <p class="source-line" id="forecast-source"></p>
         </article>
         <div class="range-switch" role="tablist" aria-label="Wind forecast range">
@@ -47,10 +47,10 @@ const template = `
           <div class="chart-legend"><span><i class="forecast-line"></i>Forecast wind</span><span><i class="gust-line"></i>Forecast gust</span></div>
         </article>
         <article class="metric-card">
-          <div><small>Rain chance / amount</small><strong id="metric-rain">?</strong></div>
-          <div><small>Temperature</small><strong id="metric-temperature">?</strong></div>
-          <div><small>Humidity</small><strong id="metric-humidity">?</strong></div>
-          <div><small>Dew point / Delta T</small><strong id="metric-delta">?</strong></div>
+          <div><small>Rain chance / amount</small><strong id="metric-rain">—</strong></div>
+          <div><small>Temperature</small><strong id="metric-temperature">—</strong></div>
+          <div><small>Humidity</small><strong id="metric-humidity">—</strong></div>
+          <div><small>Dew point / Delta T</small><strong id="metric-delta">—</strong></div>
         </article>
         <article class="outlook-card"><h2>Seven-day outlook</h2><div id="daily-outlook"></div></article>
         <p class="weather-disclaimer">Glance-only forecast information. This app does not decide whether it is safe to spray.</p>
@@ -64,7 +64,7 @@ const template = `
 
     <dialog id="location-dialog">
       <form method="dialog" id="location-form" class="dialog-shell">
-        <header><div><p>Weather settings</p><h2>Choose location</h2></div><button value="cancel" aria-label="Close">?</button></header>
+        <header><div><p>Weather settings</p><h2>Choose location</h2></div><button value="cancel" aria-label="Close">×</button></header>
         <label>Search Australian locations<input id="location-query" autocomplete="off" placeholder="Town or postcode" aria-describedby="location-search-help" /></label>
         <p id="location-search-help" class="provider-note"></p>
         <button id="search-location" type="button">Search</button>
@@ -81,7 +81,7 @@ const template = `
 
     <dialog id="link-dialog">
       <form method="dialog" id="link-form" class="dialog-shell">
-        <header><div><p>Weather shortcut</p><h2 id="link-dialog-title">Add link</h2></div><button value="cancel" aria-label="Close">?</button></header>
+        <header><div><p>Weather shortcut</p><h2 id="link-dialog-title">Add link</h2></div><button value="cancel" aria-label="Close">×</button></header>
         <label>Label<input id="link-label" maxlength="80" required /></label>
         <label>Address<input id="link-url" type="url" inputmode="url" required placeholder="https://" /></label>
         <p id="link-error" class="form-error" hidden></p>
@@ -91,7 +91,7 @@ const template = `
   </div>
 `;
 
-const display = (value, suffix = "", digits = 1) => Number.isFinite(value) ? `${Number(value).toFixed(digits)}${suffix}` : "?";
+const display = (value, suffix = "", digits = 1) => Number.isFinite(value) ? `${Number(value).toFixed(digits)}${suffix}` : "—";
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character]);
 
 function selectedProvider() {
@@ -126,8 +126,8 @@ export function mountWeatherApp(host) {
       <article class="weather-link-row">
         <a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(link.label)}</strong><small>${escapeHtml(link.url)}</small></a>
         <div>
-          <button type="button" data-link-action="up" data-link-id="${escapeHtml(link.id)}" aria-label="Move ${escapeHtml(link.label)} up" ${index === 0 ? "disabled" : ""}>?</button>
-          <button type="button" data-link-action="down" data-link-id="${escapeHtml(link.id)}" aria-label="Move ${escapeHtml(link.label)} down" ${index === settings.links.length - 1 ? "disabled" : ""}>?</button>
+          <button type="button" data-link-action="up" data-link-id="${escapeHtml(link.id)}" aria-label="Move ${escapeHtml(link.label)} up" ${index === 0 ? "disabled" : ""}>↑</button>
+          <button type="button" data-link-action="down" data-link-id="${escapeHtml(link.id)}" aria-label="Move ${escapeHtml(link.label)} down" ${index === settings.links.length - 1 ? "disabled" : ""}>↓</button>
           <button type="button" data-link-action="edit" data-link-id="${escapeHtml(link.id)}">Edit</button>
           ${link.builtIn ? "" : `<button type="button" data-link-action="remove" data-link-id="${escapeHtml(link.id)}">Remove</button>`}
         </div>
@@ -153,14 +153,14 @@ export function mountWeatherApp(host) {
     const providerSource = forecast.attributionUrl
       ? `<a href="${escapeHtml(forecast.attributionUrl)}" target="_blank" rel="noopener noreferrer">${providerLabel}</a>`
       : providerLabel;
-    $("#forecast-source").innerHTML = `${providerSource} ? model forecast ? formatted for display in this app ? fetched ${escapeHtml(fetched)}`;
+    $("#forecast-source").innerHTML = `${providerSource} · model forecast · formatted for display in this app · fetched ${escapeHtml(fetched)}`;
     $("#metric-rain").textContent = `${display(current.precipitationProbability, "%", 0)} / ${display(current.precipitation, " mm")}`;
-    $("#metric-temperature").textContent = display(current.temperature, "?C");
+    $("#metric-temperature").textContent = display(current.temperature, "°C");
     $("#metric-humidity").textContent = display(current.humidity, "%", 0);
     const derived = deltaT(current.temperature, current.wetBulb);
-    $("#metric-delta").textContent = `${display(current.dewPoint, "?C")} / ${derived === null ? "?" : `${display(derived, "?C")} derived`}`;
+    $("#metric-delta").textContent = `${display(current.dewPoint, "°C")} / ${derived === null ? "—" : `${display(derived, "°C")} derived`}`;
     $("#daily-outlook").innerHTML = forecast.daily.slice(0, 7).map((day) => `
-      <div><strong>${escapeHtml(new Intl.DateTimeFormat("en-AU", { weekday: "short" }).format(new Date(`${day.date}T00:00:00`)))}</strong><span>${display(day.temperatureMin, "?", 0)}?${display(day.temperatureMax, "?", 0)}</span><small>${display(day.precipitationProbability, "%", 0)} ? ${display(day.precipitation, " mm")}</small><small>${compassDirection(day.windDirection)} ${display(day.windSpeedMax, " km/h", 0)}</small></div>
+      <div><strong>${escapeHtml(new Intl.DateTimeFormat("en-AU", { weekday: "short" }).format(new Date(`${day.date}T00:00:00`)))}</strong><span>${display(day.temperatureMin, "°", 0)}–${display(day.temperatureMax, "°", 0)}</span><small>${display(day.precipitationProbability, "%", 0)} · ${display(day.precipitation, " mm")}</small><small>${compassDirection(day.windDirection)} ${display(day.windSpeedMax, " km/h", 0)}</small></div>
     `).join("");
     drawWindChart($("#wind-chart"), forecast.hourly, chartDays);
     if (offline) renderStatus("<strong>Offline cached forecast</strong><span>The last successful model forecast is shown and may be out of date.</span>", "stale");
@@ -203,7 +203,7 @@ export function mountWeatherApp(host) {
     }
     fetching?.abort();
     fetching = new AbortController();
-    renderStatus("<strong>Refreshing forecast?</strong><span>Other app sections remain available.</span>");
+    renderStatus("<strong>Refreshing forecast…</strong><span>Other app sections remain available.</span>");
     try {
       const result = await provider.fetchForecast(settings.location, fetching.signal);
       writeWeatherCache(result);
@@ -237,8 +237,8 @@ export function mountWeatherApp(host) {
     const controller = new AbortController();
     locationSearch = controller;
     searchButton.disabled = true;
-    searchButton.textContent = "Searching?";
-    results.innerHTML = "<p class=\"search-progress\">Searching Australian locations?</p>";
+    searchButton.textContent = "Searching…";
+    results.innerHTML = "<p class=\"search-progress\">Searching Australian locations…</p>";
     try {
       const matches = await provider.searchLocations(query, controller.signal);
       results.innerHTML = matches.map((location) => `<button type="button" data-location='${escapeHtml(JSON.stringify(location))}'>${escapeHtml(location.label)}</button>`).join("")
