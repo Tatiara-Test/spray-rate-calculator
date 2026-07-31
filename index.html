@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#236b38" />
+    <meta name="description" content="Offline spray calculations, paddock records and work notes for Pallathorpe Enterprises." />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./brand-mark.png" />
+    <link rel="apple-touch-icon" href="./brand-mark.png" />
+    <link rel="stylesheet" href="./styles/shell.css" />
+    <title>Tatiara Test | Pallathorpe Spray Rate Calculator</title>
+  </head>
+  <body>
+    <aside class="test-channel-banner" aria-label="Test version">
+      <strong>Tatiara Test</strong>
+      <span>Testing copy - records stay on this test address.</span>
+    </aside>
+    <aside id="migration-notice" class="notice" hidden role="status"></aside>
+    <aside id="update-banner" class="update-banner" hidden>
+      <span><strong>New version ready</strong><small>Your current work will stay open until you choose to update.</small></span>
+      <button id="update-now" type="button">Update now</button>
+    </aside>
+
+    <nav class="main-navigation" aria-label="Main sections">
+      <button type="button" data-route="calculator" aria-current="page"><span aria-hidden="true">∑</span>Calculator</button>
+      <button type="button" data-route="paddocks"><span aria-hidden="true">▦</span>Paddocks</button>
+      <button type="button" data-route="weather"><span aria-hidden="true">↗</span>Weather</button>
+      <button type="button" data-route="work-notes"><span aria-hidden="true">✓</span>Work Notes</button>
+    </nav>
+
+    <main id="combined-app">
+      <section class="combined-panel" data-panel="spray" aria-label="Spray calculator and paddocks">
+        <div id="spray-host"></div>
+      </section>
+      <section class="combined-panel" data-panel="weather" aria-label="Weather" hidden>
+        <div id="weather-host"></div>
+      </section>
+      <section class="combined-panel" data-panel="work-notes" aria-label="Work Notes" hidden>
+        <div id="work-notes-host"></div>
+      </section>
+    </main>
+
+    <script src="./vendor/pdf-lib.min.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,151 @@
+:root {
+  color-scheme: light dark;
+  --shell-page: #edf1e9;
+  --shell-card: #ffffff;
+  --shell-text: #18231b;
+  --shell-muted: #5c685f;
+  --shell-line: #d5ddd4;
+  --shell-green: #236b38;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--shell-page); }
+body {
+  background: var(--shell-page);
+  color: var(--shell-text);
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+}
+button { font: inherit; }
+[hidden] { display: none !important; }
+.test-channel-banner {
+  align-items: center;
+  background: #f2c94c;
+  color: #18231b;
+  display: flex;
+  font-size: 0.78rem;
+  gap: 8px;
+  justify-content: center;
+  line-height: 1.25;
+  padding: 7px max(10px, env(safe-area-inset-right)) 7px max(10px, env(safe-area-inset-left));
+  position: relative;
+  text-align: center;
+  z-index: 85;
+}
+.test-channel-banner strong { letter-spacing: 0.03em; text-transform: uppercase; }
+.combined-panel { min-height: 100vh; }
+.weather-loading,
+.weather-isolated-error {
+  background: var(--shell-card);
+  border: 1px solid var(--shell-line);
+  border-radius: 14px;
+  margin: 28px auto;
+  max-width: 680px;
+  padding: 18px;
+}
+.weather-isolated-error p { color: var(--shell-muted); line-height: 1.45; }
+
+.main-navigation {
+  background: color-mix(in srgb, var(--shell-card) 96%, transparent);
+  border-top: 1px solid var(--shell-line);
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  left: 0;
+  padding: 5px max(5px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(5px, env(safe-area-inset-left));
+  position: fixed;
+  right: 0;
+  z-index: 80;
+}
+.main-navigation button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  color: var(--shell-muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 0.69rem;
+  font-weight: 800;
+  gap: 2px;
+  justify-content: center;
+  min-height: 54px;
+  padding: 4px 2px;
+}
+.main-navigation button span { font-size: 1.2rem; line-height: 1; }
+.main-navigation button[aria-current="page"] {
+  background: color-mix(in srgb, var(--shell-green) 11%, var(--shell-card));
+  color: var(--shell-green);
+}
+#combined-app { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+#spray-host, #weather-host, #work-notes-host { --combined-nav-offset: 72px; display: block; }
+
+.notice,
+.update-banner {
+  background: #142519;
+  color: #fff;
+  left: 50%;
+  max-width: min(620px, calc(100% - 24px));
+  position: fixed;
+  transform: translateX(-50%);
+  width: max-content;
+  z-index: 100;
+}
+.notice {
+  border-radius: 10px;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  font-size: 0.8rem;
+  padding: 10px 13px;
+}
+.update-banner {
+  align-items: center;
+  border-radius: 12px;
+  box-shadow: 0 9px 30px rgba(0, 0, 0, 0.28);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px;
+  top: max(10px, env(safe-area-inset-top));
+}
+.update-banner span { display: grid; gap: 2px; }
+.update-banner small { color: #d8e3da; font-size: 0.72rem; }
+.update-banner button {
+  background: #f2c94c;
+  border: 0;
+  border-radius: 8px;
+  color: #18231b;
+  flex: 0 0 auto;
+  font-weight: 800;
+  min-height: 40px;
+  padding: 7px 11px;
+}
+
+@media (min-width: 760px) {
+  .main-navigation {
+    border-bottom: 1px solid var(--shell-line);
+    border-top: 0;
+    bottom: auto;
+    margin: 0 auto;
+    max-width: 760px;
+    padding: max(7px, env(safe-area-inset-top)) 12px 7px;
+    position: sticky;
+    top: 0;
+  }
+  .main-navigation button { flex-direction: row; font-size: 0.8rem; min-height: 44px; }
+  .main-navigation button span { font-size: 1rem; }
+  #combined-app { padding-bottom: 0; }
+  #spray-host, #weather-host, #work-notes-host { --combined-nav-offset: 16px; }
+  .notice { bottom: 16px; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --shell-page: #101813;
+    --shell-card: #18231b;
+    --shell-text: #f1f5f0;
+    --shell-muted: #b2bdb4;
+    --shell-line: #3a493d;
+    --shell-green: #65b879;
+  }
+}

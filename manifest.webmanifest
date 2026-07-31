@@ -1,0 +1,24 @@
+{
+  "name": "Tatiara Test - Pallathorpe Spray Rate Calculator",
+  "short_name": "Spray TEST",
+  "description": "Isolated test edition of the Pallathorpe spray calculator.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f5ef",
+  "theme_color": "#236b38",
+  "icons": [
+    {
+      "src": "./brand-mark.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./brand-mark.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
