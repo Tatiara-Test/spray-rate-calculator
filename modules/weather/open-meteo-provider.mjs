@@ -1,29 +1,33 @@
 import { normalizeForecast } from "./provider.mjs";
 
 export class OpenMeteoDevelopmentProvider {
-  constructor(fetchImpl = globalThis.fetch) {
+  constructor(fetchImpl = globalThis.fetch.bind(globalThis)) {
     this.fetch = fetchImpl;
     this.id = "open-meteo-development";
-    this.label = "Open-Meteo model forecast";
+    this.label = "Weather data by Open-Meteo.com";
   }
 
   async searchLocations(query, signal) {
+    const cleanedQuery = String(query).trim();
+    if (cleanedQuery.length < 2) return [];
     const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
-    url.searchParams.set("name", String(query).trim());
+    url.searchParams.set("name", cleanedQuery);
     url.searchParams.set("count", "8");
     url.searchParams.set("language", "en");
     url.searchParams.set("countryCode", "AU");
     const response = await this.fetch(url, { signal });
     if (!response.ok) throw new Error("Location search is unavailable.");
     const body = await response.json();
-    return (body.results || []).map((item) => ({
-      id: String(item.id),
-      label: [item.name, item.admin1, item.country].filter(Boolean).join(", "),
-      latitude: item.latitude,
-      longitude: item.longitude,
-      elevation: item.elevation,
-      timezone: item.timezone || "Australia/Brisbane",
-    }));
+    return (body.results || [])
+      .filter((item) => item?.name && Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)))
+      .map((item) => ({
+        id: String(item.id ?? `${item.latitude},${item.longitude}`),
+        label: [...new Set([item.name, item.admin2, item.admin1, item.country].filter(Boolean))].join(", "),
+        latitude: Number(item.latitude),
+        longitude: Number(item.longitude),
+        elevation: Number.isFinite(Number(item.elevation)) ? Number(item.elevation) : null,
+        timezone: item.timezone || "Australia/Brisbane",
+      }));
   }
 
   async fetchForecast(location, signal) {
@@ -32,6 +36,9 @@ export class OpenMeteoDevelopmentProvider {
     url.searchParams.set("longitude", location.longitude);
     url.searchParams.set("timezone", location.timezone || "auto");
     url.searchParams.set("forecast_days", "7");
+    url.searchParams.set("temperature_unit", "celsius");
+    url.searchParams.set("wind_speed_unit", "kmh");
+    url.searchParams.set("precipitation_unit", "mm");
     url.searchParams.set("current", "temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m");
     url.searchParams.set("hourly", "temperature_2m,relative_humidity_2m,dew_point_2m,wet_bulb_temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m");
     url.searchParams.set("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant");
@@ -76,7 +83,7 @@ export class OpenMeteoDevelopmentProvider {
     return normalizeForecast({
       providerId: this.id,
       providerName: this.label,
-      attributionUrl: "https://open-meteo.com/",
+      attributionUrl: "https://open-meteo.com/en/licence",
       location,
       fetchedAt: new Date().toISOString(),
       current,
@@ -85,4 +92,3 @@ export class OpenMeteoDevelopmentProvider {
     });
   }
 }
-
