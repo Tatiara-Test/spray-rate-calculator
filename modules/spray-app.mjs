@@ -15,6 +15,14 @@ import {
   missingShareMetadata,
 } from "./paddock-export.mjs";
 import { handFilesToShareSheet } from "./share-files.mjs";
+import {
+  cleanChemicalName,
+  firstUnnamedProduct,
+  normalizeChemicalName,
+  productDisplayName,
+  snapshotProducts,
+  usedCalculatorProducts,
+} from "./product-records.mjs";
 
 export function mountSprayApp(host) {
 const root = host.shadowRoot || host.attachShadow({ mode: "open" });
@@ -45,6 +53,7 @@ const coverage = document.querySelector("#coverage");
 const coverageResult = document.querySelector("#coverage-result");
 const volumeError = document.querySelector("#volume-error");
 const productList = document.querySelector("#product-list");
+const productNameError = document.querySelector("#product-name-error");
 const productTemplate = document.querySelector("#product-template");
 const addProductButton = document.querySelector("#add-product");
 const saveRecordButton = document.querySelector("#save-record-button");
@@ -246,6 +255,7 @@ function addProductRow() {
   fragment.querySelector(".product-label").textContent = `Product ${index}`;
   fragment.querySelector(".product-rate-label").textContent = `Product ${index} rate`;
   fragment.querySelector(".product-unit-label").textContent = `Product ${index} rate unit`;
+  fragment.querySelector(".product-name").setAttribute("aria-label", `Product ${index} chemical name`);
   productList.append(fragment);
 }
 
@@ -279,26 +289,51 @@ function getCalculation() {
 }
 
 function getUsedProducts() {
-  return [...productList.querySelectorAll(".product-row")]
-    .map((row, slot) => {
+  return usedCalculatorProducts(
+    [...productList.querySelectorAll(".product-row")].map((row, slot) => {
+      const nameInput = row.querySelector(".product-name");
       const rateInput = row.querySelector(".product-rate");
       const unitSelect = row.querySelector(".product-unit");
       return {
         slot,
+        name: nameInput.value,
         rate: Number(rateInput.value),
         rateText: rateInput.value,
         unit: unitSelect.value,
       };
-    })
-    .filter((product) =>
-      product.rateText !== "" &&
-      product.rate > 0 &&
-      product.unit,
-    );
+    }),
+  );
+}
+
+function clearProductNameValidation() {
+  productNameError.hidden = true;
+  productNameError.textContent = "";
+  productList.querySelectorAll(".product-name[aria-invalid='true']").forEach((input) => {
+    input.removeAttribute("aria-invalid");
+    input.closest(".product-row")?.classList.remove("has-name-error");
+  });
+}
+
+function validateProductNames({ focus = true } = {}) {
+  clearProductNameValidation();
+  const missing = firstUnnamedProduct(getUsedProducts());
+  if (!missing) return true;
+  const row = productList.children[missing.slot];
+  const input = row?.querySelector(".product-name");
+  productNameError.textContent = `Enter a chemical name for Product ${missing.slot + 1} before saving.`;
+  productNameError.hidden = false;
+  input?.setAttribute("aria-invalid", "true");
+  row?.classList.add("has-name-error");
+  if (focus) {
+    input?.focus();
+    input?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  return false;
 }
 
 function calculate() {
   const calculation = getCalculation();
+  if (!productNameError.hidden) validateProductNames({ focus: false });
   volumeError.hidden = !(calculation.litres > 5000);
   coverage.classList.toggle("has-result", Boolean(calculation.hectares));
   coverageResult.textContent = calculation.hectares
@@ -360,6 +395,7 @@ function clearCalculation(askFirst = true) {
   mixVolumeInput.value = "";
   sprayRateInput.value = "";
   resetProductRows();
+  clearProductNameValidation();
   clearEditingState();
   calculate();
   mixVolumeInput.focus();
@@ -370,6 +406,7 @@ function switchView(view) {
     const selected = button.dataset.viewButton === view;
     button.classList.toggle("selected", selected);
     button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
   });
   viewPanels.forEach((panel) => {
     panel.hidden = panel.dataset.viewPanel !== view;
@@ -399,12 +436,6 @@ function findTank(paddock, tankId) {
   return paddock?.tanks.find((tank) => tank.id === tankId);
 }
 
-function latestTank(paddock) {
-  return [...(paddock?.tanks || [])].sort(
-    (left, right) => new Date(right.savedAt) - new Date(left.savedAt),
-  )[0];
-}
-
 function refreshSuggestions() {
   paddockSuggestions.replaceChildren();
   [...store.paddocks]
@@ -419,8 +450,10 @@ function refreshSuggestions() {
   store.paddocks.forEach((paddock) => {
     paddock.tanks.forEach((tank) => {
       tank.products.forEach((product) => {
-        if (!chemicals.has(product.normalizedName)) {
-          chemicals.set(product.normalizedName, product.name);
+        const name = cleanChemicalName(product.name);
+        const normalized = normalizeChemicalName(name);
+        if (name && !chemicals.has(normalized)) {
+          chemicals.set(normalized, name);
         }
       });
     });
@@ -435,28 +468,9 @@ function refreshSuggestions() {
     });
 }
 
-function namesBySlotForPaddock(paddock) {
-  const names = new Map();
-  latestTank(paddock)?.products.forEach((product) => {
-    names.set(product.slot, product.name);
-  });
-  return names;
-}
-
-function updateSaveNamesFromPaddock() {
-  if (editingTankContext) return;
-  const paddock = findPaddockByName(savePaddockName.value);
-  if (!paddock) return;
-  const names = namesBySlotForPaddock(paddock);
-  [...saveProductList.querySelectorAll("[data-product-slot]")].forEach((input) => {
-    const remembered = names.get(Number(input.dataset.productSlot));
-    if (remembered) input.value = remembered;
-  });
-}
-
 function openSaveDialog() {
   const calculation = getCalculation();
-  if (!calculation.valid) return;
+  if (!calculation.valid || !validateProductNames()) return;
   refreshSuggestions();
   saveError.hidden = true;
   confirmSaveButton.disabled = false;
@@ -487,10 +501,6 @@ function openSaveDialog() {
   saveSprayRate.textContent = `${twoDecimals.format(calculation.sprayRate)} L/ha`;
   saveArea.textContent = `${twoDecimals.format(calculation.hectares)} hectares`;
 
-  const rememberedNames = editingTank
-    ? new Map(editingTank.products.map((product) => [product.slot, product.name]))
-    : namesBySlotForPaddock(defaultPaddock);
-
   saveProductList.replaceChildren();
   const usedProducts = getUsedProducts();
   if (!usedProducts.length) {
@@ -501,22 +511,14 @@ function openSaveDialog() {
   }
 
   usedProducts.forEach((product) => {
-    const row = document.createElement("label");
+    const row = document.createElement("div");
     row.className = "save-product-row";
     row.innerHTML = `
       <span>
-        <strong>Product ${product.slot + 1}</strong>
-        <small>${twoDecimals.format(product.rate)} ${escapeHtml(UNIT_LABELS[product.unit])} · ${escapeHtml(formatAmount(product.rate, product.unit, calculation.litres, calculation.sprayRate))}</small>
+        <strong>${escapeHtml(product.name)}</strong>
+        <small>Product ${product.slot + 1} · ${twoDecimals.format(product.rate)} ${escapeHtml(UNIT_LABELS[product.unit])}</small>
       </span>
-      <input
-        data-product-slot="${product.slot}"
-        list="chemical-suggestions"
-        maxlength="80"
-        autocomplete="off"
-        placeholder="Chemical name"
-        value="${escapeHtml(rememberedNames.get(product.slot) || "")}"
-        required
-      />
+      <b>${escapeHtml(formatAmount(product.rate, product.unit, calculation.litres, calculation.sprayRate))}</b>
     `;
     saveProductList.append(row);
   });
@@ -525,7 +527,7 @@ function openSaveDialog() {
   savePaddockName.focus();
 }
 
-function buildTankRecord(calculation, namesBySlot, existingTank = null) {
+function buildTankRecord(calculation, existingTank = null) {
   return {
     id: existingTank?.id || newId(),
     tankNumber: existingTank?.tankNumber || null,
@@ -537,23 +539,12 @@ function buildTankRecord(calculation, namesBySlot, existingTank = null) {
     hectares: calculation.hectares,
     operator: cleanName(saveOperator.value) || null,
     machine: MACHINES.includes(saveMachine.value) ? saveMachine.value : null,
-    products: getUsedProducts().map((product) => {
-      const name = cleanName(namesBySlot.get(product.slot));
-      const canonical = canonicalAmount(
+    products: snapshotProducts(getUsedProducts(), (product) => canonicalAmount(
         product.rate,
         product.unit,
         calculation.litres,
         calculation.sprayRate,
-      );
-      return {
-        slot: product.slot,
-        name,
-        normalizedName: normalizeName(name),
-        rate: product.rate,
-        unit: product.unit,
-        ...canonical,
-      };
-    }),
+      )),
   };
 }
 
@@ -585,18 +576,17 @@ function saveTankRecord(event) {
 
   const calculation = getCalculation();
   const paddockName = cleanName(savePaddockName.value);
-  const productNameInputs = [
-    ...saveProductList.querySelectorAll("[data-product-slot]"),
-  ];
-  const missingName = productNameInputs.find((input) => !cleanName(input.value));
+  const missingName = firstUnnamedProduct(getUsedProducts());
 
   if (!calculation.valid || !paddockName || !saveSprayDate.value || missingName) {
-    saveError.textContent = missingName
-      ? "Enter a chemical name for every product used."
-      : "Complete the paddock name, date and valid tank calculation.";
-    saveError.hidden = false;
     confirmSaveButton.disabled = false;
-    missingName?.focus();
+    if (missingName) {
+      saveDialog.close();
+      validateProductNames();
+    } else {
+      saveError.textContent = "Complete the paddock name, date and valid tank calculation.";
+      saveError.hidden = false;
+    }
     return;
   }
 
@@ -634,13 +624,7 @@ function saveTankRecord(event) {
     store.paddocks.push(targetPaddock);
   }
 
-  const namesBySlot = new Map(
-    productNameInputs.map((input) => [
-      Number(input.dataset.productSlot),
-      cleanName(input.value),
-    ]),
-  );
-  const tank = buildTankRecord(calculation, namesBySlot, existingTank);
+  const tank = buildTankRecord(calculation, existingTank);
   const tankChanged = !existingTank || tankContentSignature(existingTank) !== tankContentSignature(tank);
   const movedTank = Boolean(existingTank && sourcePaddock && sourcePaddock.id !== targetPaddock.id);
   let message;
@@ -683,6 +667,7 @@ function saveTankRecord(event) {
     return;
   }
   persistOperatorProfile();
+  refreshSuggestions();
 
   expandedPaddockId = targetPaddock.id;
   clearEditingState();
@@ -709,14 +694,16 @@ function getPaddockTotals(paddock) {
     tankTotal += tank.tankTotal;
     hectares += tank.hectares;
     tank.products.forEach((product) => {
-      const key = `${product.normalizedName}|${product.baseUnit}`;
+      const name = productDisplayName(product);
+      const normalizedName = normalizeChemicalName(product.name) || `missing:${tank.id}:${product.slot}`;
+      const key = `${normalizedName}|${product.baseUnit}`;
       const existing = chemicals.get(key);
       if (existing) {
         existing.amountBase += product.amountBase;
       } else {
         chemicals.set(key, {
-          name: product.name,
-          normalizedName: product.normalizedName,
+          name,
+          normalizedName,
           baseUnit: product.baseUnit,
           amountBase: product.amountBase,
         });
@@ -740,7 +727,7 @@ function renderTankRecord(paddock, tank) {
           (product) => `
             <li>
               <span>
-                <strong>${escapeHtml(product.name)}</strong>
+                <strong>${escapeHtml(productDisplayName(product))}</strong>
                 <small>${twoDecimals.format(product.rate)} ${escapeHtml(UNIT_LABELS[product.unit])}</small>
               </span>
               <b>${escapeHtml(formatPracticalAmount(product.amountBase, product.baseUnit))}</b>
@@ -894,6 +881,7 @@ function editTankRecord(paddockId, tankId) {
   resetProductRows(requiredRows);
   const rows = [...productList.querySelectorAll(".product-row")];
   tank.products.forEach((product) => {
+    rows[product.slot].querySelector(".product-name").value = product.name || "";
     rows[product.slot].querySelector(".product-rate").value = product.rate;
     rows[product.slot].querySelector(".product-unit").value = product.unit;
   });
@@ -980,17 +968,23 @@ function ensureShareMetadata(paddock) {
   shareReviewList.innerHTML = issues
     .map((issue) => {
       const tank = findTank(paddock, issue.tankId);
+      const productFields = (issue.productNamesMissing || [])
+        .map((slot) => `
+          <label class="review-chemical-field"><span>Product ${slot + 1} chemical name</span><input data-review-product-slot="${slot}" maxlength="80" autocomplete="off" value="${escapeHtml(tank?.products.find((product) => product.slot === slot)?.name || "")}" /></label>
+        `)
+        .join("");
       return `
         <fieldset class="share-review-row" data-review-tank-id="${escapeHtml(issue.tankId)}">
           <legend>Tank ${escapeHtml(issue.tankNumber)} · ${escapeHtml(formatDate(issue.date))}</legend>
           <label><span>Operator</span><input data-review-operator maxlength="80" autocomplete="name" value="${escapeHtml(tank?.operator || profile.operator || "")}" /></label>
           <label><span>Machine</span><select data-review-machine>${machineOptions(tank?.machine || profile.lastMachine)}</select></label>
+          ${productFields}
         </fieldset>
       `;
     })
     .join("");
   shareReviewDialog.showModal();
-  shareReviewList.querySelector("input")?.focus();
+  (shareReviewList.querySelector("[data-review-product-slot]") || shareReviewList.querySelector("input"))?.focus();
   return new Promise((resolve) => {
     pendingReview = { paddock, resolve };
   });
@@ -1073,7 +1067,16 @@ quickRateButtons.forEach((button) => {
 });
 
 viewButtons.forEach((button) => {
-  button.addEventListener("click", () => switchView(button.dataset.viewButton));
+  button.addEventListener("click", () => requestTopLevelView(button.dataset.viewButton));
+  button.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const currentIndex = viewButtons.indexOf(button);
+    const nextButton = viewButtons[(currentIndex + direction + viewButtons.length) % viewButtons.length];
+    requestTopLevelView(nextButton.dataset.viewButton);
+    nextButton.focus();
+  });
 });
 
 document.querySelector("[data-switch-to-calculator]").addEventListener("click", () => {
@@ -1099,7 +1102,6 @@ cancelEditButton.addEventListener("click", () => {
   clearEditingState();
   showToast("Record editing cancelled.");
 });
-savePaddockName.addEventListener("change", updateSaveNamesFromPaddock);
 saveForm.addEventListener("submit", saveTankRecord);
 document.querySelector("#close-save-dialog").addEventListener("click", () => saveDialog.close());
 document.querySelector("#cancel-save").addEventListener("click", () => saveDialog.close());
@@ -1124,16 +1126,31 @@ shareReviewForm.addEventListener("submit", (event) => {
     tank: findTank(pendingReview.paddock, row.dataset.reviewTankId),
     operator: cleanName(row.querySelector("[data-review-operator]").value),
     machine: row.querySelector("[data-review-machine]").value,
+    products: [...row.querySelectorAll("[data-review-product-slot]")].map((input) => ({
+      slot: Number(input.dataset.reviewProductSlot),
+      name: cleanChemicalName(input.value),
+    })),
   }));
-  const invalid = updates.find((update) => !update.tank || !update.operator || !MACHINES.includes(update.machine));
+  const invalid = updates.find((update) =>
+    !update.tank ||
+    !update.operator ||
+    !MACHINES.includes(update.machine) ||
+    update.products.some((product) => !product.name),
+  );
   if (invalid) {
-    shareReviewError.textContent = "Enter an operator and choose a machine for every tank.";
+    shareReviewError.textContent = "Enter an operator, choose a machine and complete every chemical name.";
     shareReviewError.hidden = false;
     return;
   }
   for (const update of updates) {
     update.tank.operator = update.operator;
     update.tank.machine = update.machine;
+    update.products.forEach(({ slot, name }) => {
+      const product = update.tank.products.find((candidate) => candidate.slot === slot);
+      if (!product) return;
+      product.name = name;
+      product.normalizedName = normalizeChemicalName(name);
+    });
     update.tank.updatedAt = new Date().toISOString();
   }
   bumpContentRevision(pendingReview.paddock);
@@ -1146,6 +1163,7 @@ shareReviewForm.addEventListener("submit", (event) => {
     return;
   }
   persistOperatorProfile();
+  refreshSuggestions();
   renderPaddocks();
   finishShareReview(true);
 });
@@ -1204,6 +1222,7 @@ resetProductRows();
 calculate();
 renderPaddocks();
 renderOperatorProfile();
+refreshSuggestions();
 host.showView = switchView;
 return { showView: switchView, renderPaddocks };
 }

@@ -370,6 +370,14 @@ function activateSection(section) {
   });
 }
 
+function requestSection(section) {
+  if (typeof host.requestTopLevelSection === "function") {
+    host.requestTopLevelSection(section);
+    return;
+  }
+  activateSection(section);
+}
+
 function openNote(date) {
   editingDate = date;
   editSessionCaptured = false;
@@ -444,7 +452,7 @@ function makeFollowUpId() {
 document.addEventListener("click", async (event) => {
   const sectionButton = event.target.closest("[data-section-target]");
   if (sectionButton) {
-    activateSection(sectionButton.dataset.sectionTarget);
+    requestSection(sectionButton.dataset.sectionTarget);
     $(".section-tabs").scrollIntoView({ block: "start", behavior: "smooth" });
     return;
   }
@@ -500,7 +508,7 @@ document.addEventListener("click", async (event) => {
   if (sourceButton) {
     const sourceDate = sourceButton.dataset.openSource;
     displayedStart = fortnightStartFor(sourceDate);
-    activateSection("notes");
+    requestSection("notes");
     renderAll();
     openNote(sourceDate);
   }
@@ -523,7 +531,7 @@ $("#return-current").addEventListener("click", () => {
 
 $("#open-today").addEventListener("click", () => {
   displayedStart = currentFortnightStart;
-  activateSection("notes");
+  requestSection("notes");
   renderAll();
   openNote(today);
 });

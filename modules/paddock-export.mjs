@@ -1,4 +1,5 @@
 import { MACHINES } from "./storage.mjs";
+import { missingProductSlots, productDisplayName } from "./product-records.mjs";
 
 export const UNIT_LABELS = Object.freeze({
   l_ha: "L/ha",
@@ -37,13 +38,15 @@ export function practicalAmount(amountBase, baseUnit) {
 export function missingShareMetadata(paddock) {
   const issues = [];
   for (const tank of paddock?.tanks || []) {
-    if (!String(tank.operator || "").trim() || !MACHINES.includes(tank.machine)) {
+    const productNamesMissing = missingProductSlots(tank);
+    if (!String(tank.operator || "").trim() || !MACHINES.includes(tank.machine) || productNamesMissing.length) {
       issues.push({
         tankId: tank.id,
         tankNumber: tank.tankNumber,
         date: tank.date,
         operatorMissing: !String(tank.operator || "").trim(),
         machineMissing: !MACHINES.includes(tank.machine),
+        productNamesMissing,
       });
     }
   }
@@ -122,7 +125,7 @@ export function buildPaddockCsv(paddock, descriptor) {
         exportNumber.format(tank.tankTotal),
         exportNumber.format(tank.sprayRate),
         exportNumber.format(tank.hectares),
-        product?.name || "",
+        product ? productDisplayName(product) : "",
         product ? exportNumber.format(product.rate) : "",
         product ? UNIT_LABELS[product.unit] || product.unit : "",
         practical ? exportNumber.format(practical.value) : "",
@@ -188,7 +191,7 @@ export function buildPdfContentLines(paddock, descriptor) {
         const amount = practicalAmount(product.amountBase, product.baseUnit);
         lines.push({
           kind: "product",
-          text: `${product.name} | ${displayNumber.format(product.rate)} ${UNIT_LABELS[product.unit] || product.unit} | ${displayNumber.format(amount.value)} ${amount.unit}`,
+          text: `${productDisplayName(product)} | ${displayNumber.format(product.rate)} ${UNIT_LABELS[product.unit] || product.unit} | ${displayNumber.format(amount.value)} ${amount.unit}`,
         });
       }
     }
@@ -261,4 +264,3 @@ export async function buildPaddockPdf(paddock, descriptor, pdfLib = globalThis.P
   });
   return document.save({ useObjectStreams: false });
 }
-

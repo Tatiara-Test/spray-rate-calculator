@@ -41,14 +41,15 @@ export function normalizePaddockStore(input) {
         if (!product || typeof product !== "object") {
           throw new TypeError(`Product ${productIndex + 1} in ${name} is not valid.`);
         }
-        const productName = nullableText(product.name);
-        if (!productName) throw new TypeError(`A product in ${name} has no name.`);
+        const productName = nullableText(product.name) || "";
         const baseUnit = product.baseUnit === "g" ? "g" : "ml";
         return {
           ...cloneJson(product),
           slot: Math.max(0, Math.trunc(finite(product.slot))),
           name: productName,
-          normalizedName: text(product.normalizedName) || productName.toLocaleLowerCase("en-AU"),
+          normalizedName: productName
+            ? text(product.normalizedName) || productName.toLocaleLowerCase("en-AU")
+            : "",
           rate: finite(product.rate),
           unit: text(product.unit),
           amountBase: finite(product.amountBase),

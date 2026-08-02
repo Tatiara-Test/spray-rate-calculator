@@ -1,7 +1,17 @@
 import { mountSprayApp } from "./modules/spray-app.mjs";
 import { migrateLegacyData } from "./modules/storage.mjs";
 import { mountWorkNotesApp } from "./modules/work-notes-app.mjs";
-import { ENABLE_LEGACY_MIGRATION } from "./config.mjs";
+import { APP_CHANNEL, ENABLE_LEGACY_MIGRATION } from "./config.mjs";
+import {
+  continueCopy,
+  hashForRoute,
+  loadNavigation,
+  navigationStorageKey,
+  normalizeRoute,
+  persistNavigation,
+  rememberRoute,
+  routeFromHash,
+} from "./modules/navigation.mjs";
 
 let migration = {};
 if (ENABLE_LEGACY_MIGRATION) {
@@ -22,14 +32,18 @@ if (migrationProblems.length) {
 
 const sprayHost = document.querySelector("#spray-host");
 const spray = mountSprayApp(sprayHost);
-const workNotes = mountWorkNotesApp(document.querySelector("#work-notes-host"));
+const workNotesHost = document.querySelector("#work-notes-host");
+const workNotes = mountWorkNotesApp(workNotesHost);
+const navigationKey = navigationStorageKey(APP_CHANNEL);
+let navigation = loadNavigation(globalThis.localStorage, navigationKey);
+let currentRoute = { section: "home", tab: null };
 const weatherHost = document.querySelector("#weather-host");
 weatherHost.innerHTML = '<p class="weather-loading">Weather view loading…</p>';
 let weather = { refresh: () => {} };
 import("./modules/weather/weather-app.mjs")
   .then(({ mountWeatherApp }) => {
     weather = mountWeatherApp(weatherHost);
-    if (routeFromHash() === "weather") weather.refresh();
+    if (currentRoute.section === "weather") weather.refresh();
   })
   .catch(() => {
     const failure = `
@@ -42,39 +56,74 @@ import("./modules/weather/weather-app.mjs")
     if (weatherHost.shadowRoot) weatherHost.shadowRoot.innerHTML = failure;
     else weatherHost.innerHTML = failure;
   });
-const routeButtons = [...document.querySelectorAll("[data-route]")];
 const panels = [...document.querySelectorAll("[data-panel]")];
-const validRoutes = new Set(["calculator", "paddocks", "weather", "work-notes"]);
+const sectionNavigation = document.querySelector("#section-navigation");
+const currentSectionTitle = document.querySelector("#current-section-title");
+const continueButton = document.querySelector("#continue-button");
+const continueTitle = document.querySelector("#continue-title");
+const continueDetail = document.querySelector("#continue-detail");
+const sectionTitles = {
+  spray: "Spray Operations",
+  weather: "Weather",
+  "work-notes": "Work Notes",
+};
 
-function routeFromHash() {
-  const route = location.hash.replace(/^#\/?/, "");
-  return validRoutes.has(route) ? route : "calculator";
+function updateContinueCard() {
+  const copy = continueCopy(navigation.last);
+  continueTitle.textContent = copy.title;
+  continueDetail.textContent = copy.detail;
+}
+
+function rememberSelectedRoute(route) {
+  navigation = rememberRoute(navigation, route);
+  try {
+    navigation = persistNavigation(globalThis.localStorage, navigationKey, navigation);
+  } catch {
+    // Navigation remains usable when device settings cannot be written.
+  }
+  updateContinueCard();
 }
 
 function showRoute(route, { updateHash = false } = {}) {
-  const selected = validRoutes.has(route) ? route : "calculator";
-  const panelName = ["calculator", "paddocks"].includes(selected) ? "spray" : selected;
+  const selected = normalizeRoute(route, navigation);
+  currentRoute = selected;
   panels.forEach((panel) => {
-    panel.hidden = panel.dataset.panel !== panelName;
+    panel.hidden = panel.dataset.panel !== selected.section;
   });
-  routeButtons.forEach((button) => {
-    if (button.dataset.route === selected) button.setAttribute("aria-current", "page");
-    else button.removeAttribute("aria-current");
-  });
-  if (selected === "calculator" || selected === "paddocks") spray.showView(selected);
-  if (selected === "weather") weather.refresh();
-  if (selected === "work-notes") workNotes.renderAll();
-  if (updateHash && location.hash !== `#/${selected}`) history.pushState(null, "", `#/${selected}`);
+  sectionNavigation.hidden = selected.section === "home";
+  currentSectionTitle.textContent = sectionTitles[selected.section] || "";
+
+  if (selected.section !== "home") rememberSelectedRoute(selected);
+  if (selected.section === "spray") spray.showView(selected.tab);
+  if (selected.section === "weather") weather.refresh();
+  if (selected.section === "work-notes") {
+    workNotes.activateSection(selected.tab);
+    workNotes.renderAll();
+  }
+  const nextHash = hashForRoute(selected);
+  if (updateHash && location.hash !== nextHash) history.pushState(null, "", nextHash);
   window.scrollTo({ top: 0, behavior: "instant" });
 }
 
-sprayHost.requestTopLevelView = (route) => showRoute(route, { updateHash: true });
+function routeForSection(section) {
+  if (section === "spray") return { section, tab: navigation.tabs.spray };
+  if (section === "work-notes") return { section, tab: navigation.tabs.workNotes };
+  return { section, tab: null };
+}
 
-routeButtons.forEach((button) => {
-  button.addEventListener("click", () => showRoute(button.dataset.route, { updateHash: true }));
+sprayHost.requestTopLevelView = (tab) => showRoute({ section: "spray", tab }, { updateHash: true });
+workNotesHost.requestTopLevelSection = (tab) => showRoute({ section: "work-notes", tab }, { updateHash: true });
+document.querySelectorAll("[data-open-section]").forEach((button) => {
+  button.addEventListener("click", () => showRoute(routeForSection(button.dataset.openSection), { updateHash: true }));
 });
-window.addEventListener("hashchange", () => showRoute(routeFromHash()));
-showRoute(routeFromHash());
+document.querySelector("#main-menu-button").addEventListener("click", () => {
+  showRoute({ section: "home", tab: null }, { updateHash: true });
+});
+continueButton.addEventListener("click", () => showRoute(navigation.last, { updateHash: true }));
+window.addEventListener("hashchange", () => showRoute(routeFromHash(location.hash, navigation)));
+updateContinueCard();
+showRoute(routeFromHash(location.hash, navigation));
+if (!location.hash) history.replaceState(null, "", "#/home");
 
 const updateBanner = document.querySelector("#update-banner");
 const updateNow = document.querySelector("#update-now");
