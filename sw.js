@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-";
 const LEGACY_CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-legacy-";
-const CACHE_NAME = `${CACHE_PREFIX}v2-2026-07-31-weather-evaluation`;
+const CACHE_NAME = `${CACHE_PREFIX}v3-2026-08-02-main-menu-chemical-names`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -14,6 +14,8 @@ const APP_SHELL = [
   "./styles/weather.css",
   "./styles/work-notes.css",
   "./modules/storage.mjs",
+  "./modules/navigation.mjs",
+  "./modules/product-records.mjs",
   "./modules/paddock-export.mjs",
   "./modules/share-files.mjs",
   "./modules/spray-template.mjs",
