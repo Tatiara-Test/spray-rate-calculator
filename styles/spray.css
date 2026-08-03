@@ -65,6 +65,32 @@ h1 { font-size: clamp(1.3rem, 5vw, 1.75rem); line-height: 1.1; margin: 0; }
   box-shadow: 0 2px 8px rgba(32, 61, 39, 0.12);
   color: var(--green);
 }
+.storage-warning {
+  align-items: center;
+  background: var(--yellow-soft);
+  border: 1px solid var(--yellow);
+  border-radius: 12px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  padding: 10px 11px;
+}
+.storage-warning strong { display: block; font-size: 0.86rem; margin-bottom: 2px; }
+.storage-warning p { color: var(--text); font-size: 0.76rem; line-height: 1.35; margin: 0; }
+.storage-warning button {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--text);
+  flex: 0 0 auto;
+  font-size: 0.76rem;
+  font-weight: 800;
+  min-height: 44px;
+  padding: 7px 10px;
+}
+.storage-lock-warning { background: color-mix(in srgb, var(--danger) 8%, var(--card)); border-color: var(--danger); }
+.storage-warning-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .calculator-card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -182,8 +208,8 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
 .compact-field select { font-size: 0.83rem; font-weight: 700; }
 .product-name-field input:focus,
 .compact-field input:focus, .compact-field select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(35, 107, 56, 0.12); }
-.product-row.has-name-error { border-color: var(--danger); border-left-color: var(--danger); }
-.product-name[aria-invalid="true"] { border-color: var(--danger); }
+.product-row.has-product-error { border-color: var(--danger); border-left-color: var(--danger); }
+.product-row [aria-invalid="true"] { border-color: var(--danger); }
 .product-name-error { margin: 9px 2px 0; }
 .product-result {
   align-items: center;
@@ -287,7 +313,8 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   color: var(--green);
   font-size: 0.76rem;
   font-weight: 800;
-  padding: 2px 4px;
+  min-height: 44px;
+  padding: 8px;
 }
 .paddock-list { display: grid; gap: 10px; }
 .empty-state {
@@ -748,6 +775,8 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   .save-product-row > b { text-align: left; }
   .record-meta-grid, .share-review-row, .download-actions { grid-template-columns: 1fr; }
   .paddock-actions { grid-template-columns: 1fr; }
+  .storage-warning { align-items: stretch; flex-direction: column; }
+  .storage-warning-actions { display: grid; grid-template-columns: 1fr; }
   .save-summary strong { font-size: 0.76rem; }
 }
 @media (prefers-color-scheme: dark) {

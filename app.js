@@ -32,14 +32,17 @@ if (migrationProblems.length) {
 
 const sprayHost = document.querySelector("#spray-host");
 const spray = mountSprayApp(sprayHost);
+const weatherHost = document.querySelector("#weather-host");
+let weather = { refresh: () => {}, hasUnsavedChanges: () => false };
 const workNotesHost = document.querySelector("#work-notes-host");
-const workNotes = mountWorkNotesApp(workNotesHost);
+const workNotes = mountWorkNotesApp(workNotesHost, {
+  hasExternalUnsavedChanges: () =>
+    Boolean(spray.hasUnsavedChanges?.() || weather.hasUnsavedChanges?.()),
+});
 const navigationKey = navigationStorageKey(APP_CHANNEL);
 let navigation = loadNavigation(globalThis.localStorage, navigationKey);
 let currentRoute = { section: "home", tab: null };
-const weatherHost = document.querySelector("#weather-host");
 weatherHost.innerHTML = '<p class="weather-loading">Weather view loading…</p>';
-let weather = { refresh: () => {} };
 import("./modules/weather/weather-app.mjs")
   .then(({ mountWeatherApp }) => {
     weather = mountWeatherApp(weatherHost);

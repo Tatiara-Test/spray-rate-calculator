@@ -2,8 +2,9 @@ import { SPRAY_TEMPLATE } from "./spray-template.mjs";
 import {
   MACHINES,
   PADDOCKS_KEY,
-  loadPaddockStore,
-  loadProfile,
+  PROFILE_VERSION,
+  inspectPaddockStore,
+  inspectProfileStore,
   persistPaddockStore,
   persistProfile,
 } from "./storage.mjs";
@@ -17,7 +18,7 @@ import {
 import { handFilesToShareSheet } from "./share-files.mjs";
 import {
   cleanChemicalName,
-  firstUnnamedProduct,
+  firstIncompleteProductRow,
   normalizeChemicalName,
   productDisplayName,
   snapshotProducts,
@@ -81,11 +82,23 @@ const confirmSaveButton = document.querySelector("#confirm-save");
 const paddockSuggestions = document.querySelector("#paddock-suggestions");
 const chemicalSuggestions = document.querySelector("#chemical-suggestions");
 const toast = document.querySelector("#toast");
+const storageLockWarning = document.querySelector("#storage-lock-warning");
+const storageLockTitle = document.querySelector("#storage-lock-title");
+const storageLockMessage = document.querySelector("#storage-lock-message");
+const downloadOriginalRecordsButton = document.querySelector("#download-original-records");
+const profileLockWarning = document.querySelector("#profile-lock-warning");
+const profileLockTitle = document.querySelector("#profile-lock-title");
+const profileLockMessage = document.querySelector("#profile-lock-message");
+const downloadOriginalProfileButton = document.querySelector("#download-original-profile");
+const writeRecoveryWarning = document.querySelector("#write-recovery-warning");
+const retryRecordSaveButton = document.querySelector("#retry-record-save");
+const downloadUnsavedRecordsButton = document.querySelector("#download-unsaved-records");
 const saveOperator = document.querySelector("#save-operator");
 const saveMachine = document.querySelector("#save-machine");
 const operatorFirstHint = document.querySelector("#operator-first-hint");
 const operatorProfileName = document.querySelector("#operator-profile-name");
 const changeOperatorButton = document.querySelector("#change-operator");
+const paddockStorageStatus = document.querySelector("#paddock-storage-status");
 const shareReviewDialog = document.querySelector("#share-review-dialog");
 const shareReviewForm = document.querySelector("#share-review-form");
 const shareReviewList = document.querySelector("#share-review-list");
@@ -100,10 +113,19 @@ let expandedPaddockId = null;
 let editingNoteId = null;
 let editingTankContext = null;
 let toastTimer = null;
-let store = loadStore();
-let profile = loadProfile();
+const storeInspection = inspectStore();
+const storageWriteLocked = ["corrupt", "future"].includes(storeInspection.status);
+let store = storeInspection.status === "ready"
+  ? storeInspection.value
+  : { version: 2, paddocks: [], lastPaddockId: null };
+let profileInspection = inspectProfile();
+let profileWriteLocked = ["corrupt", "future"].includes(profileInspection.status);
+let profile = profileInspection.status === "ready"
+  ? profileInspection.value
+  : { version: PROFILE_VERSION, operator: null, operatorPrompted: false, lastMachine: MACHINES[0] };
 let pendingReview = null;
 let pendingDownloads = null;
+const pendingPersistence = { records: false, profile: false };
 
 const twoDecimals = new Intl.NumberFormat("en-AU", {
   maximumFractionDigits: 2,
@@ -119,33 +141,99 @@ const exportNumber = new Intl.NumberFormat("en-AU", {
   useGrouping: false,
 });
 
-function loadStore() {
-  return loadPaddockStore();
+function inspectStore() {
+  try {
+    return inspectPaddockStore();
+  } catch (error) {
+    return { status: "corrupt", value: null, raw: null, error };
+  }
+}
+
+function inspectProfile() {
+  try {
+    return inspectProfileStore();
+  } catch (error) {
+    return { status: "corrupt", value: null, raw: null, error };
+  }
+}
+
+function renderStorageWarnings() {
+  storageLockWarning.hidden = !storageWriteLocked;
+  if (storageWriteLocked) {
+    const newer = storeInspection.status === "future";
+    storageLockTitle.textContent = newer
+      ? "Newer paddock records protected"
+      : "Unreadable paddock records protected";
+    storageLockMessage.textContent = newer
+      ? "These records were created by a newer app version. Saving is locked so the original data cannot be overwritten."
+      : "These records could not be read. Saving is locked and the original stored data has been left untouched.";
+    downloadOriginalRecordsButton.disabled = typeof storeInspection.raw !== "string";
+  }
+  profileLockWarning.hidden = !profileWriteLocked;
+  if (profileWriteLocked) {
+    const newer = profileInspection.status === "future";
+    profileLockTitle.textContent = newer
+      ? "Newer operator profile protected"
+      : "Unreadable operator profile protected";
+    profileLockMessage.textContent = newer
+      ? "This device profile was created by a newer app version. Profile changes are locked, but tank records can still be saved with their own operator and machine details."
+      : "This device profile could not be read. It remains untouched; tank records can still be saved with their own operator and machine details.";
+    downloadOriginalProfileButton.disabled = typeof profileInspection.raw !== "string";
+  }
+  writeRecoveryWarning.hidden = !pendingPersistence.records && !pendingPersistence.profile;
+  paddockStorageStatus.textContent = pendingPersistence.records
+    ? "Recent changes are not saved on this device"
+    : "Saved on this phone only";
+}
+
+function markPersistenceFailure(kind) {
+  pendingPersistence[kind] = true;
+  renderStorageWarnings();
 }
 
 function persistStore() {
+  if (storageWriteLocked) {
+    renderStorageWarnings();
+    storageLockWarning.focus();
+    return false;
+  }
   try {
     persistPaddockStore(store);
+    pendingPersistence.records = false;
+    renderStorageWarnings();
     return true;
   } catch {
-    showToast("Records could not be saved on this phone.");
+    markPersistenceFailure("records");
     return false;
   }
 }
 
 function persistOperatorProfile() {
+  if (profileWriteLocked) {
+    renderStorageWarnings();
+    profileLockWarning.focus();
+    return false;
+  }
   try {
     persistProfile(profile);
+    pendingPersistence.profile = false;
     renderOperatorProfile();
+    renderStorageWarnings();
     return true;
-  } catch {
-    showToast("Operator settings could not be saved on this phone.");
+  } catch (error) {
+    if (error?.code === "PROTECTED_EXISTING_DATA" && error.inspection) {
+      profileInspection = error.inspection;
+      profileWriteLocked = true;
+    }
+    markPersistenceFailure("profile");
+    renderOperatorProfile();
     return false;
   }
 }
 
 function renderOperatorProfile() {
-  operatorProfileName.textContent = profile.operator || "Not set";
+  operatorProfileName.textContent = profileWriteLocked ? "Profile protected" : profile.operator || "Not set";
+  changeOperatorButton.disabled = profileWriteLocked;
 }
 
 function bumpContentRevision(paddock) {
@@ -288,52 +376,64 @@ function getCalculation() {
   };
 }
 
-function getUsedProducts() {
-  return usedCalculatorProducts(
-    [...productList.querySelectorAll(".product-row")].map((row, slot) => {
-      const nameInput = row.querySelector(".product-name");
-      const rateInput = row.querySelector(".product-rate");
-      const unitSelect = row.querySelector(".product-unit");
-      return {
-        slot,
-        name: nameInput.value,
-        rate: Number(rateInput.value),
-        rateText: rateInput.value,
-        unit: unitSelect.value,
-      };
-    }),
-  );
-}
-
-function clearProductNameValidation() {
-  productNameError.hidden = true;
-  productNameError.textContent = "";
-  productList.querySelectorAll(".product-name[aria-invalid='true']").forEach((input) => {
-    input.removeAttribute("aria-invalid");
-    input.closest(".product-row")?.classList.remove("has-name-error");
+function getProductRows() {
+  return [...productList.querySelectorAll(".product-row")].map((row, slot) => {
+    const nameInput = row.querySelector(".product-name");
+    const rateInput = row.querySelector(".product-rate");
+    const unitSelect = row.querySelector(".product-unit");
+    return {
+      slot,
+      name: nameInput.value,
+      rate: Number(rateInput.value),
+      rateText: rateInput.value,
+      unit: unitSelect.value,
+    };
   });
 }
 
-function validateProductNames({ focus = true } = {}) {
-  clearProductNameValidation();
-  const missing = firstUnnamedProduct(getUsedProducts());
-  if (!missing) return true;
-  const row = productList.children[missing.slot];
-  const input = row?.querySelector(".product-name");
-  productNameError.textContent = `Enter a chemical name for Product ${missing.slot + 1} before saving.`;
+function getUsedProducts() {
+  return usedCalculatorProducts(getProductRows());
+}
+
+function clearProductValidation() {
+  productNameError.hidden = true;
+  productNameError.textContent = "";
+  productList.querySelectorAll("[aria-invalid='true']").forEach((control) => {
+    control.removeAttribute("aria-invalid");
+    control.closest(".product-row")?.classList.remove("has-product-error");
+  });
+}
+
+function validateProductRows({ focus = true } = {}) {
+  clearProductValidation();
+  const incomplete = firstIncompleteProductRow(getProductRows());
+  if (!incomplete) return true;
+  const row = productList.children[incomplete.slot];
+  const selector = {
+    name: ".product-name",
+    rate: ".product-rate",
+    unit: ".product-unit",
+  }[incomplete.field];
+  const control = row?.querySelector(selector);
+  const instruction = {
+    name: "Enter a chemical name",
+    rate: "Enter a rate greater than zero",
+    unit: "Choose a rate unit",
+  }[incomplete.field];
+  productNameError.textContent = `${instruction} for Product ${incomplete.slot + 1} before saving.`;
   productNameError.hidden = false;
-  input?.setAttribute("aria-invalid", "true");
-  row?.classList.add("has-name-error");
+  control?.setAttribute("aria-invalid", "true");
+  row?.classList.add("has-product-error");
   if (focus) {
-    input?.focus();
-    input?.scrollIntoView({ block: "center", behavior: "smooth" });
+    control?.focus();
+    control?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   return false;
 }
 
 function calculate() {
   const calculation = getCalculation();
-  if (!productNameError.hidden) validateProductNames({ focus: false });
+  if (!productNameError.hidden) validateProductRows({ focus: false });
   volumeError.hidden = !(calculation.litres > 5000);
   coverage.classList.toggle("has-result", Boolean(calculation.hectares));
   coverageResult.textContent = calculation.hectares
@@ -373,7 +473,7 @@ function calculate() {
         : "—";
   });
 
-  saveRecordButton.disabled = !calculation.valid;
+  saveRecordButton.disabled = storageWriteLocked || !calculation.valid;
 }
 
 function hasCalculationValues() {
@@ -395,7 +495,7 @@ function clearCalculation(askFirst = true) {
   mixVolumeInput.value = "";
   sprayRateInput.value = "";
   resetProductRows();
-  clearProductNameValidation();
+  clearProductValidation();
   clearEditingState();
   calculate();
   mixVolumeInput.focus();
@@ -470,7 +570,7 @@ function refreshSuggestions() {
 
 function openSaveDialog() {
   const calculation = getCalculation();
-  if (!calculation.valid || !validateProductNames()) return;
+  if (!calculation.valid || !validateProductRows()) return;
   refreshSuggestions();
   saveError.hidden = true;
   confirmSaveButton.disabled = false;
@@ -576,13 +676,13 @@ function saveTankRecord(event) {
 
   const calculation = getCalculation();
   const paddockName = cleanName(savePaddockName.value);
-  const missingName = firstUnnamedProduct(getUsedProducts());
+  const incompleteProduct = firstIncompleteProductRow(getProductRows());
 
-  if (!calculation.valid || !paddockName || !saveSprayDate.value || missingName) {
+  if (!calculation.valid || !paddockName || !saveSprayDate.value || incompleteProduct) {
     confirmSaveButton.disabled = false;
-    if (missingName) {
+    if (incompleteProduct) {
       saveDialog.close();
-      validateProductNames();
+      validateProductRows();
     } else {
       saveError.textContent = "Complete the paddock name, date and valid tank calculation.";
       saveError.hidden = false;
@@ -662,17 +762,28 @@ function saveTankRecord(event) {
   if (tank.operator) profile.operator = tank.operator;
   if (MACHINES.includes(tank.machine)) profile.lastMachine = tank.machine;
 
-  if (!persistStore()) {
-    confirmSaveButton.disabled = false;
-    return;
+  const recordsSaved = persistStore();
+  let profileSaved = false;
+  if (recordsSaved) {
+    if (!profileWriteLocked) profileSaved = persistOperatorProfile();
+  } else if (!profileWriteLocked) {
+    markPersistenceFailure("profile");
   }
-  persistOperatorProfile();
   refreshSuggestions();
 
   expandedPaddockId = targetPaddock.id;
   clearEditingState();
   saveDialog.close();
   renderPaddocks();
+  if (!recordsSaved) return;
+  if (profileWriteLocked) {
+    showToast(`${message}. The protected device profile was not changed.`);
+    return;
+  }
+  if (!profileSaved) {
+    showToast(`${message}, but the operator profile is not saved yet.`);
+    return;
+  }
   showToast(message);
 }
 
@@ -742,7 +853,7 @@ function renderTankRecord(paddock, tank) {
       <div class="tank-record-heading">
         <div>
           <strong>Tank ${tank.tankNumber}</strong>
-          <span>Saved ${escapeHtml(formatTime(tank.savedAt))}</span>
+          <span>${pendingPersistence.records ? "Not saved on this device" : `Saved ${escapeHtml(formatTime(tank.savedAt))}`}</span>
         </div>
         <b>Tank total: ${twoDecimals.format(tank.tankTotal)} litres</b>
       </div>
@@ -861,6 +972,13 @@ function renderPaddockCard(paddock) {
 }
 
 function renderPaddocks() {
+  if (storageWriteLocked) {
+    paddockCount.textContent = "Records unavailable";
+    paddockEmpty.hidden = true;
+    paddockList.hidden = true;
+    paddockList.replaceChildren();
+    return;
+  }
   const paddocks = [...store.paddocks].sort(
     (left, right) => new Date(right.updatedAt) - new Date(left.updatedAt),
   );
@@ -901,8 +1019,9 @@ function deleteTankRecord(paddockId, tankId) {
   if (!window.confirm(`Delete Tank ${tank.tankNumber} from ${paddock.name}?`)) return;
   paddock.tanks = paddock.tanks.filter((record) => record.id !== tankId);
   bumpContentRevision(paddock);
-  persistStore();
+  const saved = persistStore();
   renderPaddocks();
+  if (!saved) return;
   showToast(`Tank ${tank.tankNumber} deleted.`);
 }
 
@@ -916,8 +1035,9 @@ function savePaddockNote(paddockId) {
     bumpContentRevision(paddock);
   }
   editingNoteId = null;
-  persistStore();
+  const saved = persistStore();
   renderPaddocks();
+  if (!saved) return;
   showToast("Paddock note saved.");
 }
 
@@ -928,8 +1048,9 @@ function clearPaddock(paddockId) {
   store.paddocks = store.paddocks.filter((record) => record.id !== paddockId);
   if (store.lastPaddockId === paddockId) store.lastPaddockId = null;
   if (expandedPaddockId === paddockId) expandedPaddockId = null;
-  persistStore();
+  const saved = persistStore();
   renderPaddocks();
+  if (!saved) return;
   showToast(`${paddock.name} cleared.`);
 }
 
@@ -942,6 +1063,59 @@ function downloadBlob(blob, filename) {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function recoveryDateStamp() {
+  return todayLocal();
+}
+
+function downloadOriginalRecords() {
+  if (typeof storeInspection.raw !== "string") return;
+  downloadBlob(
+    new Blob([storeInspection.raw], { type: "application/json;charset=utf-8" }),
+    `pallathorpe-paddock-records-original_${recoveryDateStamp()}.json`,
+  );
+}
+
+function downloadOriginalProfile() {
+  if (typeof profileInspection.raw !== "string") return;
+  downloadBlob(
+    new Blob([profileInspection.raw], { type: "application/json;charset=utf-8" }),
+    `pallathorpe-operator-profile-original_${recoveryDateStamp()}.json`,
+  );
+}
+
+function downloadUnsavedRecords() {
+  const recovery = {
+    format: "pallathorpe-spray-recovery",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    storageKey: STORAGE_KEY,
+    pending: { ...pendingPersistence },
+    paddockRecords: store,
+    profile,
+  };
+  downloadBlob(
+    new Blob([`${JSON.stringify(recovery, null, 2)}\n`], {
+      type: "application/json;charset=utf-8",
+    }),
+    `pallathorpe-spray-unsaved-recovery_${recoveryDateStamp()}.json`,
+  );
+  showToast("Recovery copy downloaded. Changes are still not saved in the app.");
+}
+
+function retryPendingPersistence() {
+  const retryRecords = pendingPersistence.records;
+  const retryProfile = pendingPersistence.profile;
+  let saved = true;
+  if (retryRecords) {
+    if (!persistStore()) saved = false;
+    else renderPaddocks();
+  }
+  if (retryProfile && !persistOperatorProfile()) saved = false;
+  if (saved && !pendingPersistence.records && !pendingPersistence.profile) {
+    showToast("Unsaved changes are now safely stored.");
+  }
 }
 
 function machineOptions(selected) {
@@ -994,7 +1168,7 @@ function recordGeneratedCopy(paddock, descriptor) {
   paddock.lastGeneratedRevision = descriptor.revision;
   paddock.lastGeneratedAt = descriptor.generatedAt;
   paddock.lastGeneratedLabel = descriptor.label;
-  persistStore();
+  return persistStore();
 }
 
 async function exportPaddock(paddockId) {
@@ -1007,7 +1181,7 @@ async function exportPaddock(paddockId) {
     type: "text/csv;charset=utf-8",
   });
   downloadBlob(csvBlob, filenames.csv);
-  recordGeneratedCopy(paddock, descriptor);
+  if (!recordGeneratedCopy(paddock, descriptor)) return;
   showToast("CSV copy ready on this phone.");
 }
 
@@ -1037,7 +1211,7 @@ async function sharePaddock(paddockId) {
       text: `${descriptor.label} spray record, revision ${descriptor.revision}.`,
     });
     if (shareResult.mode === "shared") {
-      recordGeneratedCopy(paddock, descriptor);
+      if (!recordGeneratedCopy(paddock, descriptor)) return;
       showToast("Copies handed to your phone for sharing.");
       return;
     }
@@ -1048,7 +1222,7 @@ async function sharePaddock(paddockId) {
       : "Your phone cannot share both files together. Download each copy, then choose where to save or send it.";
     pendingDownloads = { pdfBlob, csvBlob, filenames, paddock, descriptor };
     downloadDialog.showModal();
-    recordGeneratedCopy(paddock, descriptor);
+    if (!recordGeneratedCopy(paddock, descriptor)) return;
     showToast(nativeShareFailed
       ? "Native sharing was unavailable. PDF and CSV copies are ready to download."
       : "PDF and CSV copies are ready to download.");
@@ -1107,6 +1281,11 @@ document.querySelector("#close-save-dialog").addEventListener("click", () => sav
 document.querySelector("#cancel-save").addEventListener("click", () => saveDialog.close());
 
 changeOperatorButton.addEventListener("click", () => {
+  if (profileWriteLocked) {
+    renderStorageWarnings();
+    profileLockWarning.focus();
+    return;
+  }
   const response = window.prompt(
     "Operator name for future tank records (leave blank to clear):",
     profile.operator || "",
@@ -1192,6 +1371,11 @@ downloadDialog.addEventListener("close", () => {
   pendingDownloads = null;
 });
 
+downloadOriginalRecordsButton.addEventListener("click", downloadOriginalRecords);
+downloadOriginalProfileButton.addEventListener("click", downloadOriginalProfile);
+downloadUnsavedRecordsButton.addEventListener("click", downloadUnsavedRecords);
+retryRecordSaveButton.addEventListener("click", retryPendingPersistence);
+
 paddockList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
@@ -1218,11 +1402,16 @@ paddockList.addEventListener("click", (event) => {
   if (action === "clear-paddock") clearPaddock(paddockId);
 });
 
+renderStorageWarnings();
 resetProductRows();
 calculate();
 renderPaddocks();
 renderOperatorProfile();
 refreshSuggestions();
 host.showView = switchView;
-return { showView: switchView, renderPaddocks };
+return {
+  showView: switchView,
+  renderPaddocks,
+  hasUnsavedChanges: () => pendingPersistence.records || pendingPersistence.profile,
+};
 }

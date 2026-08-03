@@ -4,6 +4,18 @@ export const SPRAY_TEMPLATE = `
     <main class="app-shell">
       <header class="brand-header"><img class="brand-mark" src="./brand-mark.png" alt="" width="64" height="64" /><div><p class="farm-name">Pallathorpe Enterprises</p><h1>Spray Rate Calculator</h1></div></header>
       <nav class="view-switch" aria-label="Spray Operations sections" role="tablist"><button id="spray-calculator-tab" class="selected" type="button" data-view-button="calculator" role="tab" aria-selected="true" aria-controls="calculator-view">Calculator</button><button id="spray-paddocks-tab" type="button" data-view-button="paddocks" role="tab" aria-selected="false" aria-controls="paddocks-view">Paddocks</button></nav>
+      <section class="storage-warning storage-lock-warning" id="storage-lock-warning" role="alert" tabindex="-1" hidden>
+        <div><strong id="storage-lock-title">Paddock records protected</strong><p id="storage-lock-message"></p></div>
+        <button id="download-original-records" type="button">Download original data</button>
+      </section>
+      <section class="storage-warning storage-lock-warning" id="profile-lock-warning" role="alert" tabindex="-1" hidden>
+        <div><strong id="profile-lock-title">Operator profile protected</strong><p id="profile-lock-message"></p></div>
+        <button id="download-original-profile" type="button">Download original profile</button>
+      </section>
+      <section class="storage-warning write-recovery-warning" id="write-recovery-warning" role="status" aria-live="polite" hidden>
+        <div><strong>Changes not saved yet</strong><p>Some recent Spray, Paddocks or operator-profile changes are held in memory only. Retry saving or download a recovery copy before closing the app.</p></div>
+        <div class="storage-warning-actions"><button id="retry-record-save" type="button">Retry saving</button><button id="download-unsaved-records" type="button">Download recovery copy</button></div>
+      </section>
       <div id="calculator-view" data-view-panel="calculator" role="tabpanel" aria-labelledby="spray-calculator-tab">
         <section class="calculator-card" aria-labelledby="mix-heading">
           <div class="section-heading"><span class="step-number">1</span><div><h2 id="mix-heading">Tank mixture</h2><p>Enter the tank total, including all products.</p></div></div>
@@ -22,7 +34,7 @@ export const SPRAY_TEMPLATE = `
         <button class="save-record-button" id="save-record-button" type="button">Save tank record</button><button class="clear-button" id="clear-button" type="button">Clear calculation</button>
       </div>
       <section id="paddocks-view" data-view-panel="paddocks" role="tabpanel" hidden aria-labelledby="spray-paddocks-tab">
-        <div class="paddocks-intro"><div><h2 id="paddocks-heading">Paddock records</h2><p>Saved on this phone only</p><p class="operator-profile">Operator: <strong id="operator-profile-name">Not set</strong> <button id="change-operator" type="button">Change</button></p></div><span id="paddock-count">0 of 10 paddocks</span></div>
+        <div class="paddocks-intro"><div><h2 id="paddocks-heading">Paddock records</h2><p id="paddock-storage-status">Saved on this phone only</p><p class="operator-profile">Operator: <strong id="operator-profile-name">Not set</strong> <button id="change-operator" type="button">Change</button></p></div><span id="paddock-count">0 of 10 paddocks</span></div>
         <div class="paddock-list" id="paddock-list"></div>
         <div class="empty-state" id="paddock-empty"><strong>No paddocks saved yet</strong><p>Use Save tank record after completing a calculation.</p><button type="button" data-switch-to-calculator>Return to calculator</button></div>
       </section>

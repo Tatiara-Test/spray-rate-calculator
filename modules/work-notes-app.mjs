@@ -4,21 +4,28 @@ import {
   applyNoteChange,
   backupExport,
   classifyFollowUp,
+  createEmptyData,
   fortnightStartFor,
   fortnightTextExport,
   formatLongDate,
   formatShortDate,
   getFortnightDates,
-  loadStoredData,
+  inspectStoredData,
   normalizeBackup,
+  persistStoredData,
   restorePreviousNote,
   sortOpenFollowUps,
   todayIso,
 } from "./work-notes-logic.mjs";
-import { combinedBackupExport } from "./storage.mjs";
+import { APP_CHANNEL } from "../config.mjs";
+import {
+  combinedBackupExport,
+  prepareCombinedBackupRestore,
+  restoreCombinedBackup,
+} from "./storage.mjs";
 import { WORK_NOTES_TEMPLATE } from "./work-notes-template.mjs";
 
-export function mountWorkNotesApp(host) {
+export function mountWorkNotesApp(host, options = {}) {
 const root = host.shadowRoot || host.attachShadow({ mode: "open" });
 root.innerHTML = WORK_NOTES_TEMPLATE;
 const browserDocument = globalThis.document;
@@ -45,16 +52,40 @@ let editSessionCaptured = false;
 let savePulseTimer = null;
 let toastTimer = null;
 let deferredInstallPrompt = null;
+let hasUnsavedDraft = false;
+let persistFailureMessage = "";
+let pendingLockedRestore = false;
 
-function readLocalData() {
+function hasExternalUnsavedChanges() {
   try {
-    return loadStoredData(localStorage.getItem(STORAGE_KEY));
+    return options.hasExternalUnsavedChanges?.() === true;
   } catch {
-    return loadStoredData(null);
+    return true;
   }
 }
 
-let data = readLocalData();
+function combinedDataHasUnsavedChanges() {
+  return hasUnsavedDraft || hasExternalUnsavedChanges();
+}
+
+function readLocalData() {
+  try {
+    return inspectStoredData(localStorage.getItem(STORAGE_KEY));
+  } catch (error) {
+    return {
+      state: "unavailable",
+      raw: null,
+      data: null,
+      error: error instanceof Error ? error.message : "Browser storage is unavailable.",
+    };
+  }
+}
+
+const initialStorage = readLocalData();
+let storageLock = ["corrupt", "future", "unavailable"].includes(initialStorage.state)
+  ? initialStorage
+  : null;
+let data = initialStorage.data ?? createEmptyData();
 
 const htmlEscapes = {
   "&": "&amp;",
@@ -68,12 +99,24 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => htmlEscapes[character]);
 }
 
-function persistData() {
+function persistData({ replaceLocked = false } = {}) {
+  if (storageLock && !replaceLocked) {
+    updateStorageUi();
+    return false;
+  }
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    persistStoredData(localStorage, data);
+    storageLock = null;
+    hasUnsavedDraft = false;
+    persistFailureMessage = "";
+    pendingLockedRestore = false;
+    updateStorageUi();
     return true;
-  } catch {
-    showToast("This browser could not save the change. Export a backup before closing.", true);
+  } catch (error) {
+    hasUnsavedDraft = true;
+    persistFailureMessage =
+      error instanceof Error ? error.message : "This browser could not save the change.";
+    updateStorageUi();
     return false;
   }
 }
@@ -171,12 +214,15 @@ function renderNotes() {
           const text = data.notes[date]?.text.trim() ?? "";
           const hasNote = Boolean(text);
           const isToday = date === today;
+          const noteStatus = hasUnsavedDraft
+            ? "Not confirmed saved on this device"
+            : "Note saved";
           const stateText = isToday
             ? hasNote
-              ? "Today · Note saved"
+              ? `Today · ${noteStatus}`
               : "Today · Missing"
             : hasNote
-              ? "Note saved"
+              ? noteStatus
               : "Missing note";
           const preview = hasNote
             ? text.replace(/\s+/g, " ")
@@ -354,6 +400,7 @@ function renderAll() {
   renderSummary();
   renderFollowUps();
   renderAttention();
+  updateStorageUi();
 }
 
 function activateSection(section) {
@@ -386,8 +433,14 @@ function openNote(date) {
   $("#note-dialog-title").textContent = formatLongDate(date);
   noteTextarea.value = note.text;
   restorePreviousButton.disabled = !note.history?.length;
-  saveIndicator.textContent = note.updatedAt ? "Saved on this device" : "Not written yet";
+  saveIndicator.textContent = hasUnsavedDraft
+    ? "Not saved — recovery available"
+    : note.updatedAt
+      ? "Saved on this device"
+      : "Not written yet";
   saveIndicator.classList.remove("fresh");
+  saveIndicator.classList.toggle("unsaved", hasUnsavedDraft);
+  updateWriteLockControls();
   noteDialog.showModal();
   requestAnimationFrame(() => {
     noteTextarea.focus();
@@ -437,6 +490,89 @@ function downloadText(filename, text, type) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+function updateWriteLockControls() {
+  const locked = Boolean(storageLock);
+  const appRoot = $(".work-notes-root");
+  appRoot.dataset.storageLocked = String(locked);
+  noteTextarea.disabled = locked;
+  $("#followup-from-note").disabled = locked;
+  $("#add-followup").disabled = locked;
+  $("#export-text").disabled = locked;
+  $("#export-backup").disabled = locked;
+  $("#export-combined-backup").disabled = locked || combinedDataHasUnsavedChanges();
+  $("#restore-combined-backup").disabled = combinedDataHasUnsavedChanges();
+  $("#followup-form button[type='submit']").disabled = locked;
+  restorePreviousButton.disabled =
+    locked || !editingDate || !data.notes[editingDate]?.history?.length;
+  document.querySelectorAll("[data-copy-note]").forEach((button) => {
+    const noteText = data.notes[button.dataset.copyNote]?.text.trim() ?? "";
+    button.disabled = locked || !noteText;
+  });
+  document.querySelectorAll("[data-followup-status]").forEach((button) => {
+    button.disabled = locked;
+  });
+}
+
+function updateStorageUi() {
+  const warning = $("#storage-warning");
+  const title = $("#storage-warning-title");
+  const message = $("#storage-warning-message");
+  const retry = $("#storage-retry");
+  const downloadDraft = $("#storage-download-draft");
+  const downloadOriginal = $("#storage-download-original");
+  const restore = $("#storage-restore");
+
+  retry.hidden = true;
+  downloadDraft.hidden = true;
+  downloadOriginal.hidden = true;
+  restore.hidden = true;
+
+  if (storageLock) {
+    warning.hidden = false;
+    if (storageLock.state === "future") {
+      title.textContent = "Work Notes were created by a newer app";
+      message.textContent =
+        "This version cannot safely open or change them. Download the original data, or restore a confirmed compatible Work Notes JSON file.";
+    } else if (storageLock.state === "corrupt") {
+      title.textContent = "Stored Work Notes could not be read safely";
+      message.textContent =
+        "The original data has not been replaced. Download it for recovery, or restore a confirmed valid Work Notes JSON file.";
+    } else {
+      title.textContent = "Work Notes storage is unavailable";
+      message.textContent =
+        "Editing is locked to avoid replacing records that this browser cannot currently read. You can try restoring a valid Work Notes JSON file.";
+    }
+    downloadOriginal.hidden = typeof storageLock.raw !== "string";
+    restore.hidden = false;
+    retry.hidden = !hasUnsavedDraft;
+    downloadDraft.hidden = !hasUnsavedDraft;
+  } else if (hasUnsavedDraft) {
+    warning.hidden = false;
+    title.textContent = "Changes are not saved on this device";
+    message.textContent = `${persistFailureMessage || "The browser could not verify the save."} Keep this page open, retry, or download a recovery copy before closing.`;
+    retry.hidden = false;
+    downloadDraft.hidden = false;
+  } else {
+    warning.hidden = true;
+  }
+
+  if (hasUnsavedDraft) {
+    saveIndicator.textContent = "Not saved — recovery available";
+    saveIndicator.classList.remove("fresh");
+    saveIndicator.classList.add("unsaved");
+  } else {
+    saveIndicator.classList.remove("unsaved");
+  }
+  updateWriteLockControls();
+}
+
+function canMutateData() {
+  if (!storageLock) return true;
+  updateStorageUi();
+  showToast("Work Notes editing is locked until the storage warning is resolved.", true);
+  return false;
+}
+
 function openFollowUpForm(sourceDate = "") {
   $("#followup-form").reset();
   $("#followup-source").value = sourceDate;
@@ -465,6 +601,7 @@ document.addEventListener("click", async (event) => {
 
   const copyButton = event.target.closest("[data-copy-note]");
   if (copyButton) {
+    if (!canMutateData()) return;
     const date = copyButton.dataset.copyNote;
     const text = data.notes[date]?.text.trim() ?? "";
     if (!text) return;
@@ -474,14 +611,16 @@ document.addEventListener("click", async (event) => {
       return;
     }
     data = { ...data, copied: { ...data.copied, [date]: true } };
-    persistData();
+    const saved = persistData();
     renderSummary();
-    showToast(`${formatShortDate(date)} copied`);
+    updateStorageUi();
+    if (saved) showToast(`${formatShortDate(date)} copied`);
     return;
   }
 
   const statusButton = event.target.closest("[data-followup-status]");
   if (statusButton) {
+    if (!canMutateData()) return;
     const now = new Date().toISOString();
     const nextStatus = statusButton.dataset.nextStatus;
     data = {
@@ -497,10 +636,13 @@ document.addEventListener("click", async (event) => {
           : item,
       ),
     };
-    persistData();
+    const saved = persistData();
     renderFollowUps();
     renderAttention();
-    showToast(nextStatus === "done" ? "Moved to completed history" : "Follow-up reopened");
+    updateStorageUi();
+    if (saved) {
+      showToast(nextStatus === "done" ? "Moved to completed history" : "Follow-up reopened");
+    }
     return;
   }
 
@@ -544,25 +686,31 @@ noteDialog.addEventListener("close", () => {
   editSessionCaptured = false;
   renderNotes();
   renderSummary();
+  updateStorageUi();
 });
 
 noteTextarea.addEventListener("input", () => {
   if (!editingDate) return;
+  if (!canMutateData()) return;
   const result = applyNoteChange(data, editingDate, noteTextarea.value, {
     capturePrevious: !editSessionCaptured,
   });
   if (!result.changed) return;
   data = result.data;
   editSessionCaptured = true;
-  persistData();
+  const saved = persistData();
   restorePreviousButton.disabled = !data.notes[editingDate]?.history?.length;
-  pulseSaved(result.copiedCleared ? "Saved · Copy tick cleared" : "Saved on this device");
+  if (saved) {
+    pulseSaved(result.copiedCleared ? "Saved · Copy tick cleared" : "Saved on this device");
+  }
   renderNotes();
   renderSummary();
+  updateStorageUi();
 });
 
 restorePreviousButton.addEventListener("click", () => {
   if (!editingDate) return;
+  if (!canMutateData()) return;
   const previous = data.notes[editingDate]?.history?.at(-1);
   if (!previous) return;
   const confirmed = window.confirm(
@@ -574,20 +722,24 @@ restorePreviousButton.addEventListener("click", () => {
   data = result.data;
   noteTextarea.value = result.text;
   editSessionCaptured = true;
-  persistData();
+  const saved = persistData();
   restorePreviousButton.disabled = !data.notes[editingDate]?.history?.length;
-  pulseSaved("Previous version restored");
+  if (saved) pulseSaved("Previous version restored");
   renderNotes();
   renderSummary();
+  updateStorageUi();
 });
 
 $("#followup-from-note").addEventListener("click", () => {
+  if (!canMutateData()) return;
   const sourceDate = editingDate ?? "";
   closeNote();
   openFollowUpForm(sourceDate);
 });
 
-$("#add-followup").addEventListener("click", () => openFollowUpForm());
+$("#add-followup").addEventListener("click", () => {
+  if (canMutateData()) openFollowUpForm();
+});
 
 function closeFollowUp() {
   if (followupDialog.open) followupDialog.close();
@@ -598,6 +750,7 @@ $("#cancel-followup-x").addEventListener("click", closeFollowUp);
 
 $("#followup-form").addEventListener("submit", (event) => {
   event.preventDefault();
+  if (!canMutateData()) return;
   const description = $("#followup-description").value.trim();
   if (!description) {
     $("#followup-description").focus();
@@ -620,11 +773,12 @@ $("#followup-form").addEventListener("submit", (event) => {
       },
     ],
   };
-  persistData();
+  const saved = persistData();
   closeFollowUp();
   renderFollowUps();
   renderAttention();
-  showToast("Follow-up saved");
+  updateStorageUi();
+  if (saved) showToast("Follow-up saved");
 });
 
 $("#export-text").addEventListener("click", () => {
@@ -640,12 +794,127 @@ $("#export-backup").addEventListener("click", () => {
 });
 
 $("#export-combined-backup").addEventListener("click", () => {
-  const exported = combinedBackupExport();
-  downloadText(exported.filename, exported.text, "application/json;charset=utf-8");
-  showToast("Combined backup downloaded");
+  if (storageLock || combinedDataHasUnsavedChanges()) {
+    showToast(
+      "Combined backup is unavailable while Spray, Weather or Work Notes has unsaved changes. Use that section’s recovery controls first.",
+      true,
+    );
+    return;
+  }
+  try {
+    const exported = combinedBackupExport(localStorage, new Date(), {
+      channel: APP_CHANNEL,
+      origin: globalThis.location?.origin,
+      normalizeWorkNotes: normalizeBackup,
+    });
+    downloadText(exported.filename, exported.text, "application/json;charset=utf-8");
+    showToast("Combined backup downloaded");
+  } catch (error) {
+    showToast(
+      `Combined backup could not be created: ${error?.message || "stored data could not be read."}`,
+      true,
+    );
+  }
+});
+
+$("#restore-combined-backup").addEventListener("click", () => {
+  if (combinedDataHasUnsavedChanges()) {
+    showToast("Resolve or download the unsaved recovery copy before restoring combined data.", true);
+    return;
+  }
+  $("#combined-restore-file").click();
+});
+
+$("#combined-restore-file").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  if (combinedDataHasUnsavedChanges()) {
+    showToast("Combined restore stopped because the app has unsaved changes.", true);
+    return;
+  }
+
+  try {
+    const prepared = prepareCombinedBackupRestore(await file.text(), {
+      normalizeWorkNotes: normalizeBackup,
+    });
+    const hasPaddocks = Object.hasOwn(prepared.datasets, "paddocks");
+    const hasWorkNotes = Object.hasOwn(prepared.datasets, "workNotes");
+    const paddockCount = prepared.datasets.paddocks?.paddocks?.length ?? 0;
+    const noteCount = Object.keys(prepared.datasets.workNotes?.notes ?? {}).length;
+    const followUpCount = prepared.datasets.workNotes?.followUps?.length ?? 0;
+    const paddockSummary = hasPaddocks ? `${paddockCount} paddocks` : "current paddocks unchanged";
+    const workNotesSummary = hasWorkNotes
+      ? `${noteCount} Work Notes and ${followUpCount} follow-ups`
+      : "current Work Notes unchanged";
+    const sourceWarnings = [];
+    if (prepared.metadata?.channel && prepared.metadata.channel !== APP_CHANNEL) {
+      sourceWarnings.push(
+        `It was created in the “${prepared.metadata.channel}” app channel; this app is “${APP_CHANNEL}”.`,
+      );
+    }
+    const currentOrigin = globalThis.location?.origin;
+    if (
+      prepared.metadata?.origin
+      && currentOrigin
+      && currentOrigin !== "null"
+      && prepared.metadata.origin !== currentOrigin
+    ) {
+      sourceWarnings.push(`It was created at ${prepared.metadata.origin}, not ${currentOrigin}.`);
+    }
+    const sourceWarning = sourceWarnings.length
+      ? `\n\nCheck the source before continuing: ${sourceWarnings.join(" ")}`
+      : "";
+    const skippedLegacyLabels = (prepared.skippedLegacyNullDatasets ?? []).map((name) => ({
+      paddocks: "paddocks",
+      workNotes: "Work Notes",
+      profile: "operator profile",
+      weatherSettings: "Weather settings",
+    })[name] || name);
+    const skippedLegacyWarning = skippedLegacyLabels.length
+      ? `\n\nThis older backup contains ambiguous empty data for ${skippedLegacyLabels.join(", ")}. Those datasets will be skipped and their current device records left unchanged.`
+      : "";
+    const confirmed = window.confirm(
+      `Apply this combined backup: ${paddockSummary}; ${workNotesSummary}? Operator profile and Weather settings are also replaced when included. A zero count clears that included section. A verified recovery snapshot is saved first, and the original legacy keys are never changed.${skippedLegacyWarning}${sourceWarning}`,
+    );
+    if (!confirmed) return;
+
+    restoreCombinedBackup(prepared, localStorage, new Date());
+    showToast("Combined backup restored. Reloading the app…");
+    window.setTimeout(() => window.location.reload(), 650);
+  } catch (error) {
+    showToast(`Combined backup was not restored: ${error?.message || "the file is not valid."}`, true);
+  }
 });
 
 $("#choose-restore").addEventListener("click", () => $("#restore-file").click());
+$("#storage-restore").addEventListener("click", () => $("#restore-file").click());
+
+$("#storage-download-original").addEventListener("click", () => {
+  if (typeof storageLock?.raw !== "string") return;
+  const isJson = storageLock.state === "future";
+  const extension = isJson ? "json" : "txt";
+  downloadText(
+    `pallathorpe-work-notes-original-${storageLock.state}_${today}.${extension}`,
+    storageLock.raw,
+    isJson ? "application/json;charset=utf-8" : "text/plain;charset=utf-8",
+  );
+  showToast("Original stored data downloaded");
+});
+
+$("#storage-download-draft").addEventListener("click", () => {
+  const exported = backupExport(data);
+  downloadText(exported.filename, exported.text, "application/json;charset=utf-8");
+  showToast("Recovery copy downloaded");
+});
+
+$("#storage-retry").addEventListener("click", () => {
+  const saved = persistData({ replaceLocked: pendingLockedRestore });
+  if (!saved) return;
+  renderAll();
+  if (noteDialog.open) pulseSaved("Saved on this device");
+  showToast("Draft saved on this device");
+});
 
 $("#restore-file").addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
@@ -659,10 +928,11 @@ $("#restore-file").addEventListener("change", async (event) => {
     );
     if (!confirmed) return;
     data = restored;
-    persistData();
+    pendingLockedRestore = Boolean(storageLock);
+    const saved = persistData({ replaceLocked: pendingLockedRestore });
     displayedStart = currentFortnightStart;
     renderAll();
-    showToast("Backup restored");
+    if (saved) showToast("Backup restored");
   } catch (error) {
     showToast(`That backup is not valid: ${error.message}`, true);
   }

@@ -131,6 +131,16 @@ export function normalizeBackup(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new TypeError("Backup must contain a JSON object.");
   }
+  if ("version" in input) {
+    if (!Number.isInteger(input.version) || input.version < 1) {
+      throw new TypeError("Backup has an invalid Work Notes version.");
+    }
+    if (input.version > APP_VERSION) {
+      throw new RangeError(
+        `This Work Notes backup uses version ${input.version}, but this app supports version ${APP_VERSION}.`,
+      );
+    }
+  }
   if (!("notes" in input) || !("copied" in input) || !("followUps" in input)) {
     throw new TypeError("Backup is missing notes, copied state, or follow-ups.");
   }
@@ -143,13 +153,132 @@ export function normalizeBackup(input) {
   };
 }
 
-export function loadStoredData(raw) {
-  if (!raw) return createEmptyData();
-  try {
-    return normalizeBackup(JSON.parse(raw));
-  } catch {
-    return createEmptyData();
+function assertStoredRecordsWereNotDiscarded(input, normalized) {
+  const plainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  const unsafe = () => {
+    throw new TypeError(
+      "Stored Work Notes contain malformed records that this app would have to discard.",
+    );
+  };
+
+  if (!plainObject(input.notes) || !plainObject(input.copied) || !Array.isArray(input.followUps)) {
+    unsafe();
   }
+  if (Object.keys(input.notes).length !== Object.keys(normalized.notes).length) unsafe();
+  if (Object.keys(input.copied).length !== Object.keys(normalized.copied).length) unsafe();
+  if (input.followUps.length !== normalized.followUps.length) unsafe();
+
+  for (const [date, note] of Object.entries(input.notes)) {
+    const safeNote = normalized.notes[date];
+    if (!safeNote) unsafe();
+    if (typeof note.updatedAt !== "string") unsafe();
+    if (note.history !== undefined) {
+      if (!Array.isArray(note.history) || note.history.length !== safeNote.history.length) unsafe();
+      for (let index = 0; index < note.history.length; index += 1) {
+        const sourceHistory = note.history[index];
+        const safeHistory = safeNote.history[index];
+        if (!sourceHistory || typeof sourceHistory !== "object" || !safeHistory) unsafe();
+        if (sourceHistory.text !== safeHistory.text) unsafe();
+        if (typeof sourceHistory.savedAt !== "string") unsafe();
+      }
+    }
+  }
+  for (const date of Object.keys(input.copied)) {
+    if (normalized.copied[date] !== true) unsafe();
+  }
+  for (let index = 0; index < input.followUps.length; index += 1) {
+    const source = input.followUps[index];
+    const safe = normalized.followUps[index];
+    if (!source || typeof source !== "object" || !safe) unsafe();
+    if (typeof source.id !== "string" || !source.id.trim() || source.id !== safe.id) unsafe();
+    if (typeof source.status !== "string" || source.status !== safe.status) unsafe();
+    if (source.dueDate != null && source.dueDate !== safe.dueDate) unsafe();
+    if (source.sourceDate != null && source.sourceDate !== safe.sourceDate) unsafe();
+    if (source.createdAt !== undefined && typeof source.createdAt !== "string") unsafe();
+    if (source.updatedAt !== undefined && typeof source.updatedAt !== "string") unsafe();
+    if (source.completedAt != null && source.completedAt !== safe.completedAt) unsafe();
+  }
+}
+
+export function inspectStoredData(raw) {
+  if (raw === null || raw === undefined) {
+    return { state: "absent", raw: null, data: createEmptyData() };
+  }
+  if (typeof raw !== "string") {
+    return {
+      state: "corrupt",
+      raw,
+      data: null,
+      error: "Stored Work Notes data is not text.",
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {
+      state: "corrupt",
+      raw,
+      data: null,
+      error: "Stored Work Notes data is not valid JSON.",
+    };
+  }
+
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    Number.isInteger(parsed.version) &&
+    parsed.version > APP_VERSION
+  ) {
+    return {
+      state: "future",
+      raw,
+      data: null,
+      version: parsed.version,
+      error: `Stored Work Notes data uses unsupported version ${parsed.version}.`,
+    };
+  }
+
+  try {
+    const normalized = normalizeBackup(parsed);
+    assertStoredRecordsWereNotDiscarded(parsed, normalized);
+    return { state: "ready", raw, data: normalized };
+  } catch (error) {
+    return {
+      state: "corrupt",
+      raw,
+      data: null,
+      error: error instanceof Error ? error.message : "Stored Work Notes data is invalid.",
+    };
+  }
+}
+
+export function loadStoredData(raw) {
+  const inspected = inspectStoredData(raw);
+  if (inspected.state === "absent" || inspected.state === "ready") {
+    return inspected.data;
+  }
+  throw new TypeError(inspected.error);
+}
+
+export function persistStoredData(storage, input) {
+  if (!storage || typeof storage.setItem !== "function" || typeof storage.getItem !== "function") {
+    throw new TypeError("Browser storage is unavailable.");
+  }
+  const data = normalizeBackup(input);
+  const raw = JSON.stringify(data);
+  storage.setItem(STORAGE_KEY, raw);
+  const readback = storage.getItem(STORAGE_KEY);
+  if (readback !== raw) {
+    throw new Error("The Work Notes save could not be verified.");
+  }
+  const inspected = inspectStoredData(readback);
+  if (inspected.state !== "ready") {
+    throw new Error("The Work Notes save could not be read back safely.");
+  }
+  return { raw, data: inspected.data };
 }
 
 export function applyNoteChange(data, dateIso, nextText, options = {}) {

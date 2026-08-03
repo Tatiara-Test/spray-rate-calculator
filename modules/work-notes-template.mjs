@@ -8,6 +8,18 @@ export const WORK_NOTES_TEMPLATE = `
         <button id="install-button" class="quiet-button install-button" type="button" hidden>Install</button>
       </header>
       <main>
+        <section id="storage-warning" class="storage-warning" role="alert" aria-labelledby="storage-warning-title" hidden>
+          <div class="storage-warning-copy">
+            <strong id="storage-warning-title">Work Notes storage needs attention</strong>
+            <p id="storage-warning-message"></p>
+          </div>
+          <div class="storage-warning-actions">
+            <button id="storage-retry" class="secondary-button compact-button" type="button" hidden>Retry save</button>
+            <button id="storage-download-draft" class="secondary-button compact-button" type="button" hidden>Download recovery copy</button>
+            <button id="storage-download-original" class="quiet-button compact-button" type="button" hidden>Download original data</button>
+            <button id="storage-restore" class="quiet-button compact-button" type="button" hidden>Restore Work Notes JSON</button>
+          </div>
+        </section>
         <section class="period-card" aria-labelledby="period-label">
           <div class="period-nav">
             <button id="previous-period" class="square-button" type="button" aria-label="Previous fortnight"><span aria-hidden="true">‹</span></button>
@@ -43,7 +55,7 @@ export const WORK_NOTES_TEMPLATE = `
           </section>
           <section class="data-card combined-data-card" aria-labelledby="combined-data-title">
             <div><p class="eyebrow">Whole combined app</p><h3 id="combined-data-title">Combined backup</h3><p>Includes paddocks, Work Notes, operator settings, location and saved weather links. It never alters the original legacy storage keys.</p></div>
-            <div class="data-actions"><button id="export-combined-backup" class="secondary-button" type="button">Download combined JSON</button></div>
+            <div class="data-actions"><button id="export-combined-backup" class="secondary-button" type="button">Download combined JSON</button><button id="restore-combined-backup" class="quiet-button" type="button">Restore combined JSON</button><input id="combined-restore-file" type="file" accept="application/json,.json" hidden /></div>
           </section>
         </section>
       </main>
@@ -65,4 +77,3 @@ export const WORK_NOTES_TEMPLATE = `
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   </div>
 `;
-

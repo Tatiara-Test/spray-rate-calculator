@@ -4,7 +4,8 @@ import {
   WEATHER_PROVIDER_MODE,
 } from "../../config.mjs";
 import {
-  loadWeatherSettings,
+  WEATHER_SETTINGS_VERSION,
+  inspectWeatherSettingsStore,
   persistWeatherSettings,
 } from "../storage.mjs";
 import { cacheMatchesLocation, cacheState, readWeatherCache, writeWeatherCache } from "./cache.mjs";
@@ -27,6 +28,15 @@ const template = `
       <section class="location-card" aria-labelledby="weather-location-name">
         <div><span aria-hidden="true">●</span><div><h2 id="weather-location-name">No location selected</h2><p id="weather-location-detail">Choose a location when a live source is approved.</p></div></div>
         <button id="change-location" type="button">Change</button>
+      </section>
+
+      <section id="weather-settings-lock" class="settings-recovery settings-lock" role="alert" tabindex="-1" hidden>
+        <div><strong id="weather-settings-lock-title">Weather settings protected</strong><span id="weather-settings-lock-message"></span></div>
+        <button id="download-original-weather-settings" type="button">Download original settings</button>
+      </section>
+      <section id="weather-settings-unsaved" class="settings-recovery settings-unsaved" role="status" aria-live="polite" tabindex="-1" hidden>
+        <div><strong>Weather changes not saved yet</strong><span>The current location or shortcuts are held in memory only. Retry saving or download a recovery copy before closing the app.</span></div>
+        <div class="settings-recovery-actions"><button id="retry-weather-settings" type="button">Retry saving</button><button id="download-unsaved-weather-settings" type="button">Download recovery copy</button></div>
       </section>
 
       <section id="weather-status" class="source-state" aria-live="polite"></section>
@@ -105,14 +115,42 @@ export function mountWeatherApp(host) {
   root.innerHTML = template;
   const $ = (selector) => root.querySelector(selector);
   const provider = selectedProvider();
-  let settings = loadWeatherSettings();
+  let settingsInspection;
+  try {
+    settingsInspection = inspectWeatherSettingsStore();
+  } catch (error) {
+    settingsInspection = { status: "corrupt", raw: null, value: null, error };
+  }
+  let settingsWriteLocked = ["corrupt", "future"].includes(settingsInspection.status);
+  let settings = settingsInspection.status === "ready"
+    ? settingsInspection.value
+    : { version: WEATHER_SETTINGS_VERSION, location: null, links: [] };
   settings.links = normalizeWeatherLinks(settings.links);
-  persistWeatherSettings(settings);
+  let pendingSettingsSave = false;
   let forecast = null;
   let chartDays = 1;
   let editingLinkId = null;
   let fetching = null;
   let locationSearch = null;
+
+  function renderSettingsRecovery() {
+    const lock = $("#weather-settings-lock");
+    lock.hidden = !settingsWriteLocked;
+    if (settingsWriteLocked) {
+      const newer = settingsInspection.status === "future";
+      $("#weather-settings-lock-title").textContent = newer
+        ? "Newer weather settings protected"
+        : "Unreadable weather settings protected";
+      $("#weather-settings-lock-message").textContent = newer
+        ? "These settings were created by a newer app version. They remain untouched; restore a verified combined backup from Work Notes to replace them."
+        : "These settings could not be read and remain untouched. Download the original bytes before using a verified combined backup to replace them.";
+      $("#download-original-weather-settings").disabled = typeof settingsInspection.raw !== "string";
+    }
+    const unsaved = $("#weather-settings-unsaved");
+    unsaved.hidden = !pendingSettingsSave;
+    $("#change-location").disabled = settingsWriteLocked;
+    $("#add-weather-link").disabled = settingsWriteLocked;
+  }
 
   function renderLocation() {
     $("#weather-location-name").textContent = settings.location?.label || "No location selected";
@@ -126,10 +164,10 @@ export function mountWeatherApp(host) {
       <article class="weather-link-row">
         <a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(link.label)}</strong><small>${escapeHtml(link.url)}</small></a>
         <div>
-          <button type="button" data-link-action="up" data-link-id="${escapeHtml(link.id)}" aria-label="Move ${escapeHtml(link.label)} up" ${index === 0 ? "disabled" : ""}>↑</button>
-          <button type="button" data-link-action="down" data-link-id="${escapeHtml(link.id)}" aria-label="Move ${escapeHtml(link.label)} down" ${index === settings.links.length - 1 ? "disabled" : ""}>↓</button>
-          <button type="button" data-link-action="edit" data-link-id="${escapeHtml(link.id)}">Edit</button>
-          ${link.builtIn ? "" : `<button type="button" data-link-action="remove" data-link-id="${escapeHtml(link.id)}">Remove</button>`}
+          <button type="button" data-link-action="up" data-link-id="${escapeHtml(link.id)}" aria-label="Move ${escapeHtml(link.label)} up" ${settingsWriteLocked || index === 0 ? "disabled" : ""}>↑</button>
+          <button type="button" data-link-action="down" data-link-id="${escapeHtml(link.id)}" aria-label="Move ${escapeHtml(link.label)} down" ${settingsWriteLocked || index === settings.links.length - 1 ? "disabled" : ""}>↓</button>
+          <button type="button" data-link-action="edit" data-link-id="${escapeHtml(link.id)}" ${settingsWriteLocked ? "disabled" : ""}>Edit</button>
+          ${link.builtIn ? "" : `<button type="button" data-link-action="remove" data-link-id="${escapeHtml(link.id)}" ${settingsWriteLocked ? "disabled" : ""}>Remove</button>`}
         </div>
       </article>
     `).join("");
@@ -215,10 +253,65 @@ export function mountWeatherApp(host) {
     }
   }
 
-  function saveSettings() {
-    persistWeatherSettings(settings);
+  function saveSettings(nextSettings = settings) {
+    if (settingsWriteLocked) {
+      renderSettingsRecovery();
+      $("#weather-settings-lock").focus();
+      return false;
+    }
+    settings = nextSettings;
+    try {
+      persistWeatherSettings(settings);
+      pendingSettingsSave = false;
+    } catch (error) {
+      if (error?.code === "PROTECTED_EXISTING_DATA" && error.inspection) {
+        settingsInspection = error.inspection;
+        settingsWriteLocked = true;
+      }
+      pendingSettingsSave = true;
+    }
     renderLocation();
     renderLinks();
+    renderSettingsRecovery();
+    if (pendingSettingsSave) $("#weather-settings-unsaved").focus();
+    return !pendingSettingsSave;
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function dateStamp() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  }
+
+  function downloadOriginalSettings() {
+    if (typeof settingsInspection.raw !== "string") return;
+    downloadBlob(
+      new Blob([settingsInspection.raw], { type: "application/json;charset=utf-8" }),
+      `pallathorpe-weather-settings-original_${dateStamp()}.json`,
+    );
+  }
+
+  function downloadUnsavedSettings() {
+    const recovery = {
+      format: "pallathorpe-weather-settings-recovery",
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      weatherSettings: settings,
+    };
+    downloadBlob(
+      new Blob([`${JSON.stringify(recovery, null, 2)}\n`], { type: "application/json;charset=utf-8" }),
+      `pallathorpe-weather-settings-unsaved_${dateStamp()}.json`,
+    );
   }
 
   async function searchLocations() {
@@ -269,10 +362,16 @@ export function mountWeatherApp(host) {
     }
     const action = event.target.closest("[data-link-action]");
     if (action) {
+      if (settingsWriteLocked) {
+        renderSettingsRecovery();
+        $("#weather-settings-lock").focus();
+        return;
+      }
       const id = action.dataset.linkId;
-      if (action.dataset.linkAction === "up") settings.links = moveWeatherLink(settings.links, id, -1);
-      if (action.dataset.linkAction === "down") settings.links = moveWeatherLink(settings.links, id, 1);
-      if (action.dataset.linkAction === "remove") settings.links = settings.links.filter((link) => link.id !== id);
+      let nextLinks = settings.links;
+      if (action.dataset.linkAction === "up") nextLinks = moveWeatherLink(settings.links, id, -1);
+      if (action.dataset.linkAction === "down") nextLinks = moveWeatherLink(settings.links, id, 1);
+      if (action.dataset.linkAction === "remove") nextLinks = settings.links.filter((link) => link.id !== id);
       if (action.dataset.linkAction === "edit") {
         const link = settings.links.find((item) => item.id === id);
         editingLinkId = id;
@@ -282,7 +381,7 @@ export function mountWeatherApp(host) {
         $("#link-dialog").showModal();
         return;
       }
-      saveSettings();
+      saveSettings({ ...settings, links: nextLinks });
     }
   });
 
@@ -300,9 +399,10 @@ export function mountWeatherApp(host) {
       const label = $("#link-label").value.trim();
       if (!label) throw new TypeError("Enter a link label.");
       const url = normalizeWeatherUrl($("#link-url").value);
-      if (editingLinkId) settings.links = settings.links.map((link) => link.id === editingLinkId ? { ...link, label, url } : link);
-      else settings.links.push({ id: crypto.randomUUID?.() || `link-${Date.now()}`, label, url, builtIn: false });
-      saveSettings();
+      const links = editingLinkId
+        ? settings.links.map((link) => link.id === editingLinkId ? { ...link, label, url } : link)
+        : [...settings.links, { id: crypto.randomUUID?.() || `link-${Date.now()}`, label, url, builtIn: false }];
+      saveSettings({ ...settings, links });
       $("#link-dialog").close();
     } catch (error) {
       $("#link-error").textContent = error.message;
@@ -318,8 +418,8 @@ export function mountWeatherApp(host) {
   $("#location-results").addEventListener("click", (event) => {
     const button = event.target.closest("[data-location]");
     if (!button) return;
-    settings.location = JSON.parse(button.dataset.location);
-    saveSettings();
+    const location = JSON.parse(button.dataset.location);
+    saveSettings({ ...settings, location });
     $("#location-dialog").close();
     refresh({ force: true });
   });
@@ -332,15 +432,24 @@ export function mountWeatherApp(host) {
       $("#location-error").hidden = false;
       return;
     }
-    settings.location = { id: `manual-${latitude}-${longitude}`, label, latitude, longitude, timezone: "Australia/Brisbane" };
-    saveSettings();
+    const location = { id: `manual-${latitude}-${longitude}`, label, latitude, longitude, timezone: "Australia/Brisbane" };
+    saveSettings({ ...settings, location });
     $("#location-dialog").close();
     refresh({ force: true });
   });
   globalThis.addEventListener("resize", () => forecast && drawWindChart($("#wind-chart"), forecast.hourly, chartDays));
 
+  $("#download-original-weather-settings").addEventListener("click", downloadOriginalSettings);
+  $("#retry-weather-settings").addEventListener("click", () => saveSettings());
+  $("#download-unsaved-weather-settings").addEventListener("click", downloadUnsavedSettings);
+
   renderLocation();
   renderLinks();
+  renderSettingsRecovery();
+  if (!settingsWriteLocked) {
+    const normalizedRaw = JSON.stringify(settings);
+    if (settingsInspection.status === "absent" || settingsInspection.raw !== normalizedRaw) saveSettings();
+  }
   if (provider?.id === "open-meteo-development") {
     $("#location-search-help").textContent = "TEST evaluation only: search a recognised town or postcode. Farm names may not appear. Weather is model forecast data from Open-Meteo, not observations.";
   } else if (provider) {
@@ -352,5 +461,9 @@ export function mountWeatherApp(host) {
   }
   renderUnconfigured();
   host.refreshOnOpen = () => refresh();
-  return { refresh, getSettings: () => structuredClone(settings) };
+  return {
+    refresh,
+    getSettings: () => structuredClone(settings),
+    hasUnsavedChanges: () => pendingSettingsSave,
+  };
 }
