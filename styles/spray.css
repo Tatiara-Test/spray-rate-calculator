@@ -47,7 +47,7 @@ h1 { font-size: clamp(1.3rem, 5vw, 1.75rem); line-height: 1.1; margin: 0; }
   border-radius: 12px;
   display: grid;
   gap: 4px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   margin-bottom: 12px;
   padding: 4px;
 }
@@ -57,7 +57,7 @@ h1 { font-size: clamp(1.3rem, 5vw, 1.75rem); line-height: 1.1; margin: 0; }
   border-radius: 9px;
   color: var(--muted);
   font-weight: 800;
-  min-height: 42px;
+  min-height: 44px;
   padding: 8px 12px;
 }
 .view-switch button.selected {
@@ -224,7 +224,7 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   padding: 6px 10px;
   text-align: right;
 }
-.add-product, .clear-button, .save-record-button {
+.add-product, .clear-button, .save-record-button, .secondary-record-button {
   border-radius: 11px;
   font-weight: 800;
   min-height: 48px;
@@ -236,6 +236,12 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   background: var(--green);
   border: 2px solid var(--green);
   color: #fff;
+  margin-bottom: 8px;
+}
+.secondary-record-button {
+  background: var(--card);
+  border: 2px solid var(--green);
+  color: var(--green);
   margin-bottom: 8px;
 }
 .save-record-button:disabled {
@@ -281,6 +287,111 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   width: 1px;
 }
 [hidden] { display: none !important; }
+
+.run-intro { margin: 3px 2px 12px; }
+.run-intro h2 { font-size: 1.2rem; margin-bottom: 5px; }
+.run-intro > div > p:last-child {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+}
+.run-empty-card,
+.active-run-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+.run-empty-card > strong { display: block; font-size: 1rem; }
+.run-empty-card > p,
+.run-helper { color: var(--muted); font-size: 0.8rem; line-height: 1.4; }
+.run-empty-actions,
+.run-finish-actions { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+.run-empty-actions button,
+.run-finish-actions button {
+  background: var(--card-muted);
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  font-weight: 800;
+  min-height: 48px;
+  padding: 9px 12px;
+}
+.run-empty-actions button:first-child,
+.run-finish-actions button:first-child { background: var(--green); border-color: var(--green); color: #fff; }
+.run-finish-actions .danger-button { color: var(--danger); }
+.active-run-heading { align-items: start; display: flex; justify-content: space-between; }
+.active-run-heading > span {
+  background: var(--green-soft);
+  border-radius: 999px;
+  color: var(--green);
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 6px 9px;
+}
+.run-meta {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, 1fr);
+  margin: 12px 0;
+}
+.run-meta > span,
+.controller-grid > div {
+  background: var(--card-muted);
+  border-radius: 9px;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+}
+.run-meta small,
+.controller-grid > div > span { color: var(--muted); font-size: 0.68rem; }
+.run-meta strong,
+.controller-grid > div > strong { font-size: 0.84rem; }
+.run-allocation-form {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.controller-grid {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 10px;
+}
+.controller-grid > div { min-height: 72px; justify-content: center; }
+.run-allocation-list { display: grid; gap: 7px; margin: 14px 0; }
+.run-allocation-row {
+  align-items: center;
+  background: var(--card-muted);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 9px 10px;
+}
+.run-allocation-row > span { display: grid; gap: 2px; }
+.run-allocation-row strong { font-size: 0.84rem; }
+.run-allocation-row small { color: var(--muted); font-size: 0.7rem; }
+.run-allocation-row b { font-size: 0.8rem; text-align: right; }
+
+.paddock-balance {
+  background: var(--card-muted);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  margin-top: 12px;
+  padding: 11px 12px;
+}
+.paddock-balance > p { color: var(--muted); font-size: 0.79rem; line-height: 1.4; margin: 3px 0; }
+.paddock-balance > strong { display: block; font-size: 0.9rem; margin-bottom: 4px; }
+.paddock-balance[data-state="matched"] { background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 35%, var(--line)); }
+.paddock-balance[data-state="over"] { background: var(--yellow-soft); border-color: var(--yellow); }
+.chemical-balance-list { border-top: 1px solid var(--line); list-style: none; margin: 9px 0 0; padding: 7px 0 0; }
+.chemical-balance-list li { display: grid; font-size: 0.76rem; gap: 2px; padding: 3px 0; }
+.chemical-balance-list small { color: var(--muted); }
 
 .paddocks-intro {
   align-items: end;
@@ -473,11 +584,82 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
   color: var(--danger);
 }
+.paddock-actions button:disabled { cursor: not-allowed; opacity: 0.48; }
+.active-run-export-note {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  margin: 7px 2px 0;
+}
 .tank-history {
   border-top: 1px solid var(--line);
   margin-top: 14px;
   padding-top: 13px;
 }
+.tank-history > summary {
+  align-items: center;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.88rem;
+  font-weight: 800;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 48px;
+  padding: 4px 2px;
+}
+.tank-history > summary::-webkit-details-marker { display: none; }
+.tank-history > summary::after { color: var(--green); content: "+"; font-size: 1.2rem; }
+.tank-history[open] > summary::after { content: "−"; }
+.tank-history > summary:focus-visible { border-radius: 7px; box-shadow: 0 0 0 3px rgba(35, 107, 56, 0.18); outline: 2px solid var(--green); }
+.archived-paddocks {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  margin-top: 12px;
+  padding: 5px 12px 10px;
+}
+.archived-paddocks > summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  font-size: 0.86rem;
+  font-weight: 800;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 48px;
+}
+.archived-paddocks > summary::-webkit-details-marker { display: none; }
+.archived-paddocks > summary::after { color: var(--green); content: "+"; font-size: 1.2rem; }
+.archived-paddocks[open] > summary::after { content: "−"; }
+.archived-paddocks > summary:focus-visible { border-radius: 7px; box-shadow: 0 0 0 3px rgba(35, 107, 56, 0.18); outline: 2px solid var(--green); }
+.archived-paddocks > p { color: var(--muted); font-size: 0.74rem; line-height: 1.4; margin: 0 0 8px; }
+.archived-paddock-list { display: grid; gap: 7px; }
+.archived-paddock-row {
+  align-items: center;
+  background: var(--card-muted);
+  border-radius: 10px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 8px 9px;
+}
+.archived-paddock-row > span { display: grid; gap: 2px; }
+.archived-paddock-row strong { font-size: 0.84rem; }
+.archived-paddock-row small { color: var(--muted); font-size: 0.7rem; }
+.archived-paddock-row button {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--green);
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 800;
+  min-height: 44px;
+  min-width: 72px;
+  padding: 7px 10px;
+}
+.archived-paddock-row button:disabled { color: var(--muted); cursor: not-allowed; opacity: 0.6; }
 .date-group > h4 {
   color: var(--muted);
   font-size: 0.77rem;
@@ -548,6 +730,7 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   margin-top: 4px;
 }
 .record-actions button.danger-link { color: var(--danger); }
+.record-actions button { min-height: 44px; min-width: 44px; }
 .no-tanks { color: var(--muted); font-size: 0.82rem; margin: 0; }
 
 .save-dialog {
@@ -773,7 +956,8 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   }
   .save-product-row { grid-template-columns: 1fr; }
   .save-product-row > b { text-align: left; }
-  .record-meta-grid, .share-review-row, .download-actions { grid-template-columns: 1fr; }
+  .record-meta-grid, .share-review-row, .download-actions, .run-empty-actions, .run-finish-actions { grid-template-columns: 1fr; }
+  .controller-grid { grid-template-columns: 0.8fr 1.2fr; }
   .paddock-actions { grid-template-columns: 1fr; }
   .storage-warning { align-items: stretch; flex-direction: column; }
   .storage-warning-actions { display: grid; grid-template-columns: 1fr; }
