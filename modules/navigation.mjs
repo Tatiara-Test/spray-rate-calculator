@@ -1,4 +1,4 @@
-const SPRAY_TABS = new Set(["calculator", "paddocks"]);
+const SPRAY_TABS = new Set(["calculator", "run", "paddocks"]);
 const WORK_NOTES_TABS = new Set(["notes", "summary", "followups"]);
 
 export const DEFAULT_NAVIGATION = Object.freeze({
@@ -85,7 +85,7 @@ export function rememberRoute(navigation, route) {
 export function routeFromHash(hash, navigation = DEFAULT_NAVIGATION) {
   const token = String(hash || "").replace(/^#\/?/, "").replace(/\/$/, "");
   if (!token || token === "home") return { section: "home", tab: null };
-  if (token === "calculator" || token === "paddocks") {
+  if (token === "calculator" || token === "run" || token === "paddocks") {
     return { section: "spray", tab: token };
   }
   if (token === "spray") return normalizeRoute({ section: "spray" }, navigation);
@@ -116,6 +116,6 @@ export function continueCopy(route) {
     const labels = { notes: "Notes", summary: "Summary", followups: "Follow-ups" };
     return { title: "Continue Work Notes", detail: labels[selected.tab] };
   }
-  const labels = { calculator: "Calculator", paddocks: "Paddocks" };
+  const labels = { calculator: "Calculator", run: "Paddock Run", paddocks: "Paddocks" };
   return { title: "Continue Spray Operations", detail: labels[selected.tab] };
 }

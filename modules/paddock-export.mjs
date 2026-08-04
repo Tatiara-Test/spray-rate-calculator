@@ -1,4 +1,4 @@
-import { MACHINES } from "./storage.mjs";
+import { MACHINES, SPRAY_METHODS } from "./storage.mjs";
 import { missingProductSlots, productDisplayName } from "./product-records.mjs";
 
 export const UNIT_LABELS = Object.freeze({
@@ -37,15 +37,25 @@ export function practicalAmount(amountBase, baseUnit) {
 
 export function missingShareMetadata(paddock) {
   const issues = [];
+  const seenRunIds = new Set();
   for (const tank of paddock?.tanks || []) {
+    if (tank.recordType === "run-allocation" && seenRunIds.has(tank.runId)) continue;
+    if (tank.recordType === "run-allocation") seenRunIds.add(tank.runId);
     const productNamesMissing = missingProductSlots(tank);
-    if (!String(tank.operator || "").trim() || !MACHINES.includes(tank.machine) || productNamesMissing.length) {
+    const sprayMethodMissing = !SPRAY_METHODS.includes(tank.sprayMethod)
+      || (tank.sprayMethod === "Camera" && !["412R", "Hayes boom"].includes(tank.machine));
+    if (!String(tank.operator || "").trim() || !MACHINES.includes(tank.machine) || sprayMethodMissing || productNamesMissing.length) {
       issues.push({
         tankId: tank.id,
+        recordType: tank.recordType || "tank",
+        runId: tank.runId || null,
         tankNumber: tank.tankNumber,
+        runNumber: tank.runNumber,
+        allocationNumber: tank.allocationNumber,
         date: tank.date,
         operatorMissing: !String(tank.operator || "").trim(),
         machineMissing: !MACHINES.includes(tank.machine),
+        sprayMethodMissing,
         productNamesMissing,
       });
     }
@@ -88,6 +98,7 @@ export function buildPaddockCsv(paddock, descriptor) {
   const rows = [
     ["Pallathorpe spray record"],
     ["Paddock", paddock.name],
+    ["Paddock size (ha)", paddock.sizeHectares ? exportNumber.format(paddock.sizeHectares) : ""],
     ["Record status", descriptor.label],
     ["Content revision", descriptor.revision],
     ["Generated", descriptor.generatedAt],
@@ -99,8 +110,15 @@ export function buildPaddockCsv(paddock, descriptor) {
       "Spray date",
       "Saved time",
       "Tank",
+      "Record type",
+      "Run",
+      "Allocation",
+      "Run status",
       "Operator",
       "Machine",
+      "Application",
+      "Controller before (L)",
+      "Controller after (L)",
       "Tank total (L)",
       "Spray rate (L/ha)",
       "Area (ha)",
@@ -119,9 +137,16 @@ export function buildPaddockCsv(paddock, descriptor) {
       rows.push([
         tank.date,
         tank.savedAt,
-        `Tank ${tank.tankNumber}`,
+        tank.recordType === "run-allocation" ? "" : `Tank ${tank.tankNumber}`,
+        tank.recordType === "run-allocation" ? "Run allocation" : "Tank record",
+        tank.runNumber || "",
+        tank.allocationNumber || "",
+        tank.runStatus || "",
         tank.operator || "",
         tank.machine || "",
+        tank.sprayMethod || "",
+        tank.controllerBeforeLitres ?? "",
+        tank.controllerAfterLitres ?? "",
         exportNumber.format(tank.tankTotal),
         exportNumber.format(tank.sprayRate),
         exportNumber.format(tank.hectares),
@@ -173,17 +198,29 @@ export function buildPdfContentLines(paddock, descriptor) {
     { kind: "title", text: "Pallathorpe Enterprises" },
     { kind: "heading", text: "Spray Record" },
     { kind: "meta", text: `Paddock: ${paddock.name}` },
+    { kind: "meta", text: `Paddock size: ${paddock.sizeHectares ? `${displayNumber.format(paddock.sizeHectares)} ha` : "Not recorded"}` },
     { kind: "meta", text: `${descriptor.label} | Revision ${descriptor.revision}` },
     { kind: "meta", text: `Generated: ${descriptor.generatedAt}` },
     { kind: "meta", text: `Total: ${displayNumber.format(totals.litres)} L | ${displayNumber.format(totals.hectares)} ha` },
     { kind: "meta", text: `Paddock note: ${paddock.note || "None"}` },
   ];
   for (const tank of sortedTanks(paddock)) {
-    lines.push({ kind: "tank", text: `Tank ${tank.tankNumber} | ${tank.date} | ${tank.operator} | ${tank.machine}` });
+    const recordLabel = tank.recordType === "run-allocation"
+      ? `Run ${tank.runNumber}, allocation ${tank.allocationNumber} (${tank.runStatus || "status not recorded"})`
+      : `Tank ${tank.tankNumber}`;
+    lines.push({ kind: "tank", text: `${recordLabel} | ${tank.date} | ${tank.operator || "Not set"} | ${tank.machine || "Not set"} | ${tank.sprayMethod || "Needs review"}` });
     lines.push({
       kind: "detail",
-      text: `${displayNumber.format(tank.tankTotal)} L | ${displayNumber.format(tank.sprayRate)} L/ha | ${displayNumber.format(tank.hectares)} ha`,
+      text: tank.sprayMethod === "Camera"
+        ? `${displayNumber.format(tank.tankTotal)} L | Camera allocation | no whole-paddock hectares calculated`
+        : `${displayNumber.format(tank.tankTotal)} L | ${displayNumber.format(tank.sprayRate)} L/ha | ${displayNumber.format(tank.hectares)} ha`,
     });
+    if (tank.recordType === "run-allocation") {
+      lines.push({
+        kind: "detail",
+        text: `Controller: ${displayNumber.format(tank.controllerBeforeLitres)} L to ${displayNumber.format(tank.controllerAfterLitres)} L`,
+      });
+    }
     if (!tank.products?.length) {
       lines.push({ kind: "product", text: "No products recorded" });
     } else {

@@ -9,21 +9,33 @@ export const WEATHER_CACHE_KEY = `${COMBINED_PREFIX}:weather-cache`;
 export const MIGRATION_KEY = `${COMBINED_PREFIX}:migration`;
 export const LEGACY_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:paddocks`;
 export const LEGACY_WORK_NOTES_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:work-notes`;
+export const PRE_V3_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:pre-v3-backup:paddocks`;
 export const PRE_RESTORE_RECOVERY_PREFIX = `${COMBINED_PREFIX}:recovery:pre-restore:`;
 
-export const PADDOCK_STORE_VERSION = 2;
+export const PADDOCK_STORE_VERSION = 3;
 export const WORK_NOTES_VERSION = 1;
 export const PROFILE_VERSION = 1;
 export const WEATHER_SETTINGS_VERSION = 1;
 export const COMBINED_BACKUP_VERSION = 2;
 
 export const MACHINES = Object.freeze(["412R", "Hayes boom", "4830", "4023"]);
+export const SPRAY_METHODS = Object.freeze(["Broadacre", "Camera"]);
 
 const text = (value) => (typeof value === "string" ? value : "");
 const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
 const nullableText = (value) => {
   const cleaned = text(value).trim().replace(/\s+/g, " ");
   return cleaned || null;
+};
+const nullablePositive = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+const nonNegativeFinite = (value, context, fallback = 0) => {
+  const number = finite(value, fallback);
+  if (number < 0) throw new TypeError(`${context} cannot be negative.`);
+  return number;
 };
 
 function cloneJson(value) {
@@ -62,7 +74,7 @@ export function normalizePaddockStore(input) {
   if (!input || typeof input !== "object") {
     throw new TypeError("Paddock records must contain a JSON object.");
   }
-  assertSupportedVersion(input, PADDOCK_STORE_VERSION, "Paddock records");
+  const sourceVersion = assertSupportedVersion(input, PADDOCK_STORE_VERSION, "Paddock records");
   if (!Array.isArray(input.paddocks)) {
     throw new TypeError("Paddock records must contain a paddocks array.");
   }
@@ -75,6 +87,11 @@ export function normalizePaddockStore(input) {
     const tanks = paddock.tanks.map((tank, tankIndex) => {
       if (!tank || typeof tank !== "object" || !Array.isArray(tank.products)) {
         throw new TypeError(`Tank ${tankIndex + 1} in ${name} is not valid.`);
+      }
+      const machine = MACHINES.includes(tank.machine) ? tank.machine : null;
+      const sprayMethod = SPRAY_METHODS.includes(tank.sprayMethod) ? tank.sprayMethod : null;
+      if (sprayMethod === "Camera" && !["412R", "Hayes boom"].includes(machine)) {
+        throw new TypeError(`Tank ${tankIndex + 1} in ${name} has an incompatible camera-spray machine.`);
       }
       const products = tank.products.map((product, productIndex) => {
         if (!product || typeof product !== "object" || Array.isArray(product)) {
@@ -89,9 +106,9 @@ export function normalizePaddockStore(input) {
           normalizedName: productName
             ? text(product.normalizedName) || productName.toLocaleLowerCase("en-AU")
             : "",
-          rate: finite(product.rate),
+          rate: nonNegativeFinite(product.rate, `Product ${productIndex + 1} rate in ${name}`),
           unit: text(product.unit),
-          amountBase: finite(product.amountBase),
+          amountBase: nonNegativeFinite(product.amountBase, `Product ${productIndex + 1} amount in ${name}`),
           baseUnit,
         };
       });
@@ -102,11 +119,13 @@ export function normalizePaddockStore(input) {
         date: text(tank.date),
         savedAt: text(tank.savedAt),
         updatedAt: text(tank.updatedAt) || text(tank.savedAt),
-        tankTotal: finite(tank.tankTotal),
-        sprayRate: finite(tank.sprayRate),
-        hectares: finite(tank.hectares),
+        tankTotal: nonNegativeFinite(tank.tankTotal, `Tank ${tankIndex + 1} total in ${name}`),
+        sprayRate: nonNegativeFinite(tank.sprayRate, `Tank ${tankIndex + 1} spray rate in ${name}`),
+        hectares: nonNegativeFinite(tank.hectares, `Tank ${tankIndex + 1} hectares in ${name}`),
         operator: nullableText(tank.operator),
-        machine: MACHINES.includes(tank.machine) ? tank.machine : null,
+        machine,
+        sprayMethod,
+        recordType: "tank",
         products,
       };
     });
@@ -115,6 +134,8 @@ export function normalizePaddockStore(input) {
       id: text(paddock.id) || `migrated-paddock-${paddockIndex + 1}`,
       name,
       normalizedName: text(paddock.normalizedName) || name.toLocaleLowerCase("en-AU"),
+      sizeHectares: nullablePositive(paddock.sizeHectares),
+      archivedAt: nullableText(paddock.archivedAt),
       note: text(paddock.note),
       createdAt: text(paddock.createdAt),
       updatedAt: text(paddock.updatedAt),
@@ -129,10 +150,158 @@ export function normalizePaddockStore(input) {
       tanks,
     };
   });
+
+  if (sourceVersion >= 3 && !Array.isArray(input.runs)) {
+    throw new TypeError("Paddock records version 3 must contain a runs array.");
+  }
+  if (sourceVersion >= 3 && !Object.hasOwn(input, "activeRunId")) {
+    throw new TypeError("Paddock records version 3 must contain an active run reference.");
+  }
+  const runs = (Array.isArray(input.runs) ? input.runs : []).map((run, runIndex) => {
+    if (!run || typeof run !== "object" || Array.isArray(run) || !Array.isArray(run.products) || !Array.isArray(run.allocations)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} is not valid.`);
+    }
+    const id = text(run.id);
+    if (!id) throw new TypeError(`Paddock run ${runIndex + 1} has no identifier.`);
+    if (!["active", "completed", "cancelled"].includes(run.status)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} has an invalid status.`);
+    }
+    const machine = MACHINES.includes(run.machine) ? run.machine : null;
+    const sprayMethod = SPRAY_METHODS.includes(run.sprayMethod) ? run.sprayMethod : null;
+    if (!sprayMethod) throw new TypeError(`Paddock run ${runIndex + 1} has no application method.`);
+    if (sprayMethod === "Camera" && !["412R", "Hayes boom"].includes(machine)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} has an incompatible camera-spray machine.`);
+    }
+    const controllerStartLitres = finite(run.controllerStartLitres, -1);
+    if (controllerStartLitres <= 0) throw new TypeError(`Paddock run ${runIndex + 1} has an invalid controller start.`);
+    const sprayRate = finite(run.sprayRate, -1);
+    if (sprayRate < 0 || (sprayMethod === "Broadacre" && sprayRate <= 0)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} has an invalid spray rate.`);
+    }
+    const products = run.products.map((product, productIndex) => {
+      if (!product || typeof product !== "object" || Array.isArray(product)) {
+        throw new TypeError(`Product ${productIndex + 1} in run ${runIndex + 1} is not valid.`);
+      }
+      const productName = nullableText(product.name) || "";
+      return {
+        ...cloneJson(product),
+        slot: Math.max(0, Math.trunc(finite(product.slot))),
+        name: productName,
+        normalizedName: productName
+          ? text(product.normalizedName) || productName.toLocaleLowerCase("en-AU")
+          : "",
+        rate: nonNegativeFinite(product.rate, `Product ${productIndex + 1} rate in run ${runIndex + 1}`),
+        unit: text(product.unit),
+        amountBase: nonNegativeFinite(product.amountBase, `Product ${productIndex + 1} amount in run ${runIndex + 1}`),
+        baseUnit: product.baseUnit === "g" ? "g" : "ml",
+      };
+    });
+    let controllerBefore = controllerStartLitres;
+    const allocationIds = new Set();
+    const allocations = run.allocations.map((allocation, allocationIndex) => {
+      if (!allocation || typeof allocation !== "object" || Array.isArray(allocation)) {
+        throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} is not valid.`);
+      }
+      const allocationId = text(allocation.id);
+      const paddockId = text(allocation.paddockId);
+      const paddockName = nullableText(allocation.paddockName);
+      const controllerAfterLitres = finite(allocation.controllerAfterLitres, -1);
+      if (!allocationId || allocationIds.has(allocationId) || !paddockId || !paddockName) {
+        throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} is incomplete.`);
+      }
+      if (controllerAfterLitres < 0 || controllerAfterLitres >= controllerBefore) {
+        throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} has an invalid controller reading.`);
+      }
+      allocationIds.add(allocationId);
+      controllerBefore = controllerAfterLitres;
+      return {
+        ...cloneJson(allocation),
+        id: allocationId,
+        paddockId,
+        paddockName,
+        paddockSizeHectares: nullablePositive(allocation.paddockSizeHectares),
+        controllerAfterLitres,
+        savedAt: text(allocation.savedAt),
+        updatedAt: text(allocation.updatedAt) || text(allocation.savedAt),
+      };
+    });
+    const finalReading = run.controllerFinalLitres === null || run.controllerFinalLitres === undefined
+      ? null
+      : finite(run.controllerFinalLitres, -1);
+    if (finalReading !== null && (finalReading < 0 || finalReading > controllerStartLitres)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} has an invalid final controller reading.`);
+    }
+    if (run.status === "active" && finalReading !== null) {
+      throw new TypeError(`Active paddock run ${runIndex + 1} cannot have a final controller reading.`);
+    }
+    if (run.status === "completed" && (!allocations.length || finalReading !== controllerBefore)) {
+      throw new TypeError(`Completed paddock run ${runIndex + 1} has an inconsistent final boundary.`);
+    }
+    if (run.status === "cancelled" && (allocations.length || finalReading !== controllerStartLitres)) {
+      throw new TypeError(`Cancelled paddock run ${runIndex + 1} has an inconsistent audit record.`);
+    }
+    return {
+      ...cloneJson(run),
+      id,
+      runNumber: Math.max(1, Math.trunc(finite(run.runNumber, runIndex + 1))),
+      status: run.status,
+      date: text(run.date),
+      savedAt: text(run.savedAt),
+      updatedAt: text(run.updatedAt) || text(run.savedAt),
+      completedAt: nullableText(run.completedAt),
+      cancelledAt: nullableText(run.cancelledAt),
+      operator: nullableText(run.operator),
+      machine,
+      sprayMethod,
+      controllerStartLitres,
+      controllerFinalLitres: finalReading,
+      sprayRate,
+      products,
+      allocations,
+    };
+  });
+  const activeRunId = nullableText(input.activeRunId);
+  const activeRuns = runs.filter((run) => run.status === "active");
+  if (activeRuns.length > 1 || (activeRuns.length === 1 && activeRunId !== activeRuns[0].id) || (activeRuns.length === 0 && activeRunId !== null)) {
+    throw new TypeError("Paddock records have an inconsistent active run reference.");
+  }
+  const paddockIds = new Set();
+  const paddocksById = new Map();
+  const recordIds = new Set();
+  for (const paddock of paddocks) {
+    if (paddockIds.has(paddock.id)) throw new TypeError(`Paddock id ${paddock.id} is duplicated.`);
+    paddockIds.add(paddock.id);
+    paddocksById.set(paddock.id, paddock);
+    for (const tank of paddock.tanks) {
+      if (recordIds.has(tank.id)) throw new TypeError(`Record id ${tank.id} is duplicated.`);
+      recordIds.add(tank.id);
+    }
+  }
+  const runIds = new Set();
+  for (const run of runs) {
+    if (runIds.has(run.id)) throw new TypeError(`Paddock run id ${run.id} is duplicated.`);
+    runIds.add(run.id);
+    for (const allocation of run.allocations) {
+      if (!paddockIds.has(allocation.paddockId)) {
+        throw new TypeError(`Run allocation ${allocation.id} refers to a paddock that is not stored.`);
+      }
+      if (run.status === "active" && paddocksById.get(allocation.paddockId)?.archivedAt) {
+        throw new TypeError(`Active run allocation ${allocation.id} refers to an archived paddock.`);
+      }
+      if (recordIds.has(allocation.id)) throw new TypeError(`Record id ${allocation.id} is duplicated.`);
+      recordIds.add(allocation.id);
+    }
+  }
+  const lastPaddockId = text(input.lastPaddockId) || null;
+  if (lastPaddockId !== null && !paddockIds.has(lastPaddockId)) {
+    throw new TypeError("Paddock records have an invalid last paddock reference.");
+  }
   return {
     version: PADDOCK_STORE_VERSION,
     paddocks,
-    lastPaddockId: text(input.lastPaddockId) || null,
+    lastPaddockId,
+    runs,
+    activeRunId,
   };
 }
 
@@ -154,7 +323,11 @@ function assertRequiredStoredFields(source, fields, context) {
 
 function normalizeStoredPaddockStore(input) {
   const normalized = normalizePaddockStore(input);
-  assertPresentFieldsUnchanged(input, normalized, ["lastPaddockId"], "Paddock records");
+  const sourceVersion = input.version === undefined ? 1 : input.version;
+  assertPresentFieldsUnchanged(input, normalized, ["lastPaddockId", "activeRunId", "runs"], "Paddock records");
+  if (sourceVersion >= 3) {
+    assertRequiredStoredFields(input, ["runs", "activeRunId"], "Paddock records");
+  }
   input.paddocks.forEach((paddock, paddockIndex) => {
     const normalizedPaddock = normalized.paddocks[paddockIndex];
     const paddockName = normalizedPaddock.name || `Paddock ${paddockIndex + 1}`;
@@ -163,10 +336,11 @@ function normalizeStoredPaddockStore(input) {
       normalizedPaddock,
       [
         "id", "name", "normalizedName", "note", "createdAt", "updatedAt",
-        "contentRevision", "lastGeneratedRevision", "lastGeneratedAt", "lastGeneratedLabel",
+        "sizeHectares", "archivedAt", "contentRevision", "lastGeneratedRevision", "lastGeneratedAt", "lastGeneratedLabel",
       ],
       paddockName,
     );
+    if (sourceVersion >= 3) assertRequiredStoredFields(paddock, ["sizeHectares"], paddockName);
     paddock.tanks.forEach((tank, tankIndex) => {
       const normalizedTank = normalizedPaddock.tanks[tankIndex];
       assertRequiredStoredFields(
@@ -179,10 +353,13 @@ function normalizeStoredPaddockStore(input) {
         normalizedTank,
         [
           "id", "tankNumber", "date", "savedAt", "updatedAt", "tankTotal",
-          "sprayRate", "hectares", "operator", "machine",
+          "sprayRate", "hectares", "operator", "machine", "sprayMethod", "recordType",
         ],
         `Tank ${tankIndex + 1} in ${paddockName}`,
       );
+      if (sourceVersion >= 3) {
+        assertRequiredStoredFields(tank, ["sprayMethod", "recordType"], `Tank ${tankIndex + 1} in ${paddockName}`);
+      }
       tank.products.forEach((product, productIndex) => {
         if (!product || typeof product !== "object" || Array.isArray(product)) {
           throw new TypeError(`Product ${productIndex + 1} in ${paddockName} is not a stored record object.`);
@@ -394,13 +571,81 @@ export function inspectPaddockStore(storage = globalThis.localStorage) {
 export function loadPaddockStore(storage = globalThis.localStorage) {
   try {
     const parsed = readJson(storage, PADDOCKS_KEY);
-    return parsed ? normalizePaddockStore(parsed) : { version: 2, paddocks: [], lastPaddockId: null };
+    return parsed ? normalizePaddockStore(parsed) : {
+      version: PADDOCK_STORE_VERSION,
+      paddocks: [],
+      lastPaddockId: null,
+      runs: [],
+      activeRunId: null,
+    };
   } catch {
-    return { version: 2, paddocks: [], lastPaddockId: null };
+    return {
+      version: PADDOCK_STORE_VERSION,
+      paddocks: [],
+      lastPaddockId: null,
+      runs: [],
+      activeRunId: null,
+    };
+  }
+}
+
+function preservePreV3PaddockStore(storage, now = new Date().toISOString()) {
+  const sourceRaw = storage.getItem(PADDOCKS_KEY);
+  if (sourceRaw === null) return;
+  const source = JSON.parse(sourceRaw);
+  const sourceVersion = source?.version === undefined ? 1 : source.version;
+  if (!Number.isInteger(sourceVersion) || sourceVersion >= PADDOCK_STORE_VERSION) return;
+  const backupValue = {
+    sourceKey: PADDOCKS_KEY,
+    sourceVersion,
+    capturedAt: now,
+    raw: sourceRaw,
+  };
+  const verifyBackup = (raw, key) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error(`The paddock safety backup at ${key} is unreadable; the upgrade was not written.`);
+    }
+    if (
+      parsed?.sourceKey !== PADDOCKS_KEY
+      || !Number.isInteger(parsed?.sourceVersion)
+      || parsed.sourceVersion < 1
+      || parsed.sourceVersion >= PADDOCK_STORE_VERSION
+      || typeof parsed?.raw !== "string"
+    ) {
+      throw new Error(`The paddock safety backup at ${key} is invalid; the upgrade was not written.`);
+    }
+    return parsed;
+  };
+  const existingBackup = storage.getItem(PRE_V3_PADDOCKS_BACKUP_KEY);
+  if (existingBackup !== null) {
+    const parsed = verifyBackup(existingBackup, PRE_V3_PADDOCKS_BACKUP_KEY);
+    if (parsed.sourceVersion !== sourceVersion || parsed.raw !== sourceRaw) {
+      let hash = 2166136261;
+      for (let index = 0; index < sourceRaw.length; index += 1) {
+        hash ^= sourceRaw.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      const currentBackupKey = `${PRE_V3_PADDOCKS_BACKUP_KEY}:v${sourceVersion}-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+      const currentBackup = storage.getItem(currentBackupKey);
+      if (currentBackup === null) writeVerified(storage, currentBackupKey, backupValue);
+      else {
+        const verifiedCurrent = verifyBackup(currentBackup, currentBackupKey);
+        if (verifiedCurrent.sourceVersion !== sourceVersion || verifiedCurrent.raw !== sourceRaw) {
+          throw new Error("A paddock safety-backup identifier collision prevented the upgrade write.");
+        }
+      }
+    }
+  } else writeVerified(storage, PRE_V3_PADDOCKS_BACKUP_KEY, backupValue);
+  if (storage.getItem(PADDOCKS_KEY) !== sourceRaw) {
+    throw new Error("Paddock records changed while preparing the version-3 safety backup.");
   }
 }
 
 export function persistPaddockStore(store, storage = globalThis.localStorage) {
+  preservePreV3PaddockStore(storage);
   writeVerified(storage, PADDOCKS_KEY, normalizePaddockStore(store));
 }
 
@@ -710,6 +955,8 @@ export function prepareCombinedBackupRestore(input, options = {}) {
           version: PADDOCK_STORE_VERSION,
           paddocks: [],
           lastPaddockId: null,
+          runs: [],
+          activeRunId: null,
         });
         continue;
       }
@@ -726,7 +973,7 @@ export function prepareCombinedBackupRestore(input, options = {}) {
       continue;
     }
     if (dataset.name === "paddocks") {
-      datasets.paddocks = normalizePaddockStore(value);
+      datasets.paddocks = normalizeStoredPaddockStore(value);
     } else if (dataset.name === "workNotes") {
       assertSupportedVersion(value, WORK_NOTES_VERSION, "Work Notes");
       datasets.workNotes = normalizeWorkNotesData(normalizeWorkNotes(cloneJson(value)));
