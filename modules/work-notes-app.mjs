@@ -23,6 +23,7 @@ import {
   prepareCombinedBackupRestore,
   restoreCombinedBackup,
 } from "./storage.mjs";
+import { mountWorkNotesAiDemo } from "./work-notes-ai-demo.mjs";
 import { WORK_NOTES_TEMPLATE } from "./work-notes-template.mjs";
 
 export function mountWorkNotesApp(host, options = {}) {
@@ -496,6 +497,9 @@ function updateWriteLockControls() {
   appRoot.dataset.storageLocked = String(locked);
   noteTextarea.disabled = locked;
   $("#followup-from-note").disabled = locked;
+  $("#ai-dictate-note").disabled = locked;
+  $("#ai-organise-note").disabled = locked || !noteTextarea.value.trim();
+  $("#ai-create-followup-note").disabled = locked || !noteTextarea.value.trim();
   $("#add-followup").disabled = locked;
   $("#export-text").disabled = locked;
   $("#export-backup").disabled = locked;
@@ -583,6 +587,61 @@ function openFollowUpForm(sourceDate = "") {
 function makeFollowUpId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return `followup-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function applyAiNoteText({ date, text }) {
+  if (!canMutateData()) return false;
+  const result = applyNoteChange(data, date, text, { capturePrevious: true });
+  if (!result.changed) return true;
+  data = result.data;
+  const saved = persistData();
+  renderNotes();
+  renderSummary();
+  updateStorageUi();
+  if (saved) showToast("AI demonstration sample saved");
+  return true;
+}
+
+function reopenAiTargetNote(date) {
+  displayedStart = fortnightStartFor(date);
+  requestSection("notes");
+  renderAll();
+  openNote(date);
+}
+
+function openAiFollowUpDraft({ description, dueDate, sourceDate }) {
+  if (!canMutateData()) return;
+  openFollowUpForm(sourceDate);
+  $("#followup-description").value = description;
+  $("#followup-due").value = dueDate || "";
+  $("#followup-source").value = sourceDate || "";
+}
+
+const aiDemo = mountWorkNotesAiDemo(root, {
+  provider: options.aiProvider,
+  applyNoteText: applyAiNoteText,
+  reopenNote: reopenAiTargetNote,
+  openFollowUpDraft: openAiFollowUpDraft,
+  copyText,
+  showToast,
+});
+
+function openAiFromNote(mode, button) {
+  if (!editingDate || !canMutateData()) return;
+  if (mode !== "dictation" && !noteTextarea.value.trim()) {
+    showToast("Add some note text first.", true);
+    noteTextarea.focus();
+    return;
+  }
+  const nextContext = {
+    date: editingDate,
+    noteText: noteTextarea.value,
+    selectionStart: noteTextarea.selectionStart,
+    selectionEnd: noteTextarea.selectionEnd,
+    returnToNote: true,
+  };
+  closeNote();
+  requestAnimationFrame(() => aiDemo.open(mode, nextContext, button));
 }
 
 document.addEventListener("click", async (event) => {
@@ -680,6 +739,18 @@ $("#open-today").addEventListener("click", () => {
 
 $("#close-note").addEventListener("click", closeNote);
 $("#done-note").addEventListener("click", closeNote);
+$("#ai-dictate-note").addEventListener("click", (event) => {
+  openAiFromNote("dictation", event.currentTarget);
+});
+$("#ai-organise-note").addEventListener("click", (event) => {
+  openAiFromNote("organise", event.currentTarget);
+});
+$("#ai-create-followup-note").addEventListener("click", (event) => {
+  openAiFromNote("followup", event.currentTarget);
+});
+$("#ai-summary-demo").addEventListener("click", (event) => {
+  aiDemo.open("summary", { returnToNote: false }, event.currentTarget);
+});
 
 noteDialog.addEventListener("close", () => {
   editingDate = null;

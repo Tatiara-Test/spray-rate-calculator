@@ -43,6 +43,10 @@ export const WORK_NOTES_TEMPLATE = `
         </section>
         <section id="summary-section" class="app-section" role="tabpanel" aria-labelledby="summary-tab" data-section="summary" hidden>
           <div class="section-intro"><div><p class="eyebrow">Ready for wages</p><h2>Fortnight summary</h2></div><button id="export-text" class="secondary-button compact-button" type="button">Export text</button></div>
+          <section class="ai-summary-demo-card" aria-labelledby="ai-summary-demo-title">
+            <div><span class="ai-demo-badge">AI DEMO · NOT CONNECTED</span><h3 id="ai-summary-demo-title">AI fortnight summary</h3><p>The connected version will summarise this fortnight. This version displays a clearly labelled fixed sample.</p></div>
+            <button id="ai-summary-demo" class="secondary-button compact-button" type="button">Preview sample summary</button>
+          </section>
           <p class="section-help">Copy one day at a time. A green tick stays until that note is edited.</p><div id="summary-list" class="summary-list"></div>
         </section>
         <section id="followups-section" class="app-section" role="tabpanel" aria-labelledby="followups-tab" data-section="followups" hidden>
@@ -61,19 +65,43 @@ export const WORK_NOTES_TEMPLATE = `
       </main>
       <footer><p>Private on this device · No tracking, cloud sync, or notifications</p></footer>
     </div>
-    <dialog id="note-dialog" class="note-dialog"><div class="dialog-shell">
+    <dialog id="note-dialog" class="note-dialog" aria-labelledby="note-dialog-title"><div class="dialog-shell">
       <header class="dialog-header"><div><p id="note-dialog-kicker" class="eyebrow">Daily note</p><h2 id="note-dialog-title">Date</h2></div><button id="close-note" class="square-button close-button" type="button" aria-label="Close note">×</button></header>
       <div class="save-line" aria-live="polite"><span id="save-indicator" class="save-indicator">Saved on this device</span></div>
-      <label class="note-field" for="note-text"><span>What did you do?</span><textarea id="note-text" rows="12" spellcheck="true" autocomplete="off" placeholder="Tap here, type, or use your phone keyboard’s microphone…"></textarea></label>
-      <p class="dictation-hint">Text only. Your phone’s keyboard can turn speech into text.</p>
+      <section class="ai-note-launcher" aria-labelledby="ai-note-launcher-title">
+        <div><span class="ai-demo-badge">AI DEMO · NOT CONNECTED</span><strong id="ai-note-launcher-title">Test the app microphone</strong><p>Nothing is sent to an AI service. Any transcript shown is a fixed sample, not your recording.</p></div>
+        <button id="ai-dictate-note" class="secondary-button compact-button" type="button">Test microphone</button>
+      </section>
+      <label class="note-field" for="note-text"><span>What did you do?</span><textarea id="note-text" rows="12" spellcheck="true" autocomplete="off" placeholder="Type your work notes here…"></textarea></label>
+      <p class="dictation-hint">Manual typing remains available whether the AI service is connected or not.</p>
+      <div class="ai-note-sample-actions" aria-label="AI demonstration note actions"><button id="ai-organise-note" class="quiet-button compact-button" type="button">Organise note (sample)</button><button id="ai-create-followup-note" class="quiet-button compact-button" type="button">Create follow-up (sample)</button></div>
       <div class="dialog-actions"><button id="restore-previous" class="quiet-button" type="button" disabled>Restore previous</button><button id="followup-from-note" class="secondary-button" type="button">Add follow-up</button><button id="done-note" class="primary-button" type="button">Done</button></div>
     </div></dialog>
-    <dialog id="followup-dialog" class="followup-dialog"><form id="followup-form" class="dialog-shell">
-      <header class="dialog-header"><div><p class="eyebrow">Keep it on the list</p><h2>Add follow-up</h2></div><button id="cancel-followup-x" class="square-button close-button" type="button" aria-label="Close follow-up form">×</button></header>
+    <dialog id="followup-dialog" class="followup-dialog" aria-labelledby="followup-dialog-title"><form id="followup-form" class="dialog-shell">
+      <header class="dialog-header"><div><p class="eyebrow">Keep it on the list</p><h2 id="followup-dialog-title">Add follow-up</h2></div><button id="cancel-followup-x" class="square-button close-button" type="button" aria-label="Close follow-up form">×</button></header>
       <label class="form-field"><span>Description</span><textarea id="followup-description" rows="4" required spellcheck="true" placeholder="What needs doing?"></textarea></label>
       <div class="form-grid"><label class="form-field"><span>Due date <small>optional</small></span><input id="followup-due" type="date" /></label><label class="form-field"><span>Original note date <small>optional</small></span><input id="followup-source" type="date" /></label></div>
       <div class="dialog-actions"><button id="cancel-followup" class="quiet-button" type="button">Cancel</button><button class="primary-button" type="submit">Save follow-up</button></div>
     </form></dialog>
+    <dialog id="ai-demo-dialog" class="ai-demo-dialog" aria-labelledby="ai-demo-title">
+      <div class="ai-demo-shell">
+        <header class="ai-demo-header"><div><span class="ai-demo-badge">AI NOT CONNECTED</span><h2 id="ai-demo-title">AI demonstration</h2></div><button id="ai-close" class="square-button close-button" type="button" aria-label="Close AI demonstration">×</button></header>
+        <div class="ai-demo-scroll">
+          <section class="ai-disconnected-banner" role="status" aria-label="AI connection status"><strong>Demonstration only</strong><p id="ai-demo-mode-copy">No OpenAI API or transcription service is connected.</p><small id="ai-network-status"></small></section>
+          <section id="ai-recording-panel" class="ai-recording-panel">
+            <div class="ai-recording-state"><div><strong id="ai-recording-status" role="status" aria-live="polite">Microphone test has not started.</strong><span>Recording time <b id="ai-recording-timer">00:00</b></span></div><span class="ai-recording-dot" aria-hidden="true"></span></div>
+            <p>This records locally only. No AI is listening, and the recording is discarded when this window closes.</p>
+            <div class="ai-recording-actions"><button id="ai-start-recording" class="primary-button" type="button">Start microphone test</button><button id="ai-stop-recording" class="secondary-button" type="button" disabled>Stop recording</button><button id="ai-load-sample" class="quiet-button" type="button">Skip recording and view fixed sample</button></div>
+            <audio id="ai-recording-playback" controls hidden aria-label="Temporary local microphone test playback"></audio>
+            <p id="ai-recording-error" class="ai-recording-error" role="alert" hidden></p>
+          </section>
+          <label class="form-field ai-preview-field" for="ai-preview-text"><span id="ai-preview-label">Demonstration preview</span><textarea id="ai-preview-text" rows="10" spellcheck="true"></textarea></label>
+          <div id="ai-followup-fields" class="form-grid" hidden><label class="form-field"><span>Due date <small>sample</small></span><input id="ai-preview-due" type="date" /></label><label class="form-field"><span>Original note date</span><input id="ai-preview-source" type="date" /></label></div>
+          <p id="ai-result-note" class="ai-result-note">No sample has been loaded.</p>
+        </div>
+        <footer class="ai-demo-footer"><button id="ai-cancel" class="quiet-button" type="button">Cancel</button><button id="ai-apply-result" class="primary-button" type="button" disabled>Apply sample</button></footer>
+      </div>
+    </dialog>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   </div>
 `;
