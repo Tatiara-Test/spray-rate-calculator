@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-";
 const LEGACY_CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-legacy-";
-const CACHE_NAME = `${CACHE_PREFIX}v8-2026-08-06-ai-demo`;
+const CACHE_NAME = `${CACHE_PREFIX}v10-2026-08-07-ai-live-config`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -24,6 +24,8 @@ const APP_SHELL = [
   "./modules/spray-template.mjs",
   "./modules/spray-app.mjs",
   "./modules/work-notes-ai-demo.mjs",
+  "./modules/work-notes-ai-client.mjs",
+  "./modules/work-notes-ai.mjs",
   "./modules/work-notes-template.mjs",
   "./modules/work-notes-logic.mjs",
   "./modules/work-notes-app.mjs",
