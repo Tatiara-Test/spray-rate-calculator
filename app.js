@@ -1,7 +1,12 @@
 import { mountSprayApp } from "./modules/spray-app.mjs";
 import { migrateLegacyData } from "./modules/storage.mjs";
 import { mountWorkNotesApp } from "./modules/work-notes-app.mjs";
-import { APP_CHANNEL, ENABLE_LEGACY_MIGRATION } from "./config.mjs";
+import {
+  APP_CHANNEL,
+  ENABLE_LEGACY_MIGRATION,
+  WORK_NOTES_AI_BACKEND_URL,
+  WORK_NOTES_AI_MODE,
+} from "./config.mjs";
 import {
   continueCopy,
   hashForRoute,
@@ -38,6 +43,11 @@ const workNotesHost = document.querySelector("#work-notes-host");
 const workNotes = mountWorkNotesApp(workNotesHost, {
   hasExternalUnsavedChanges: () =>
     Boolean(spray.hasUnsavedChanges?.() || weather.hasUnsavedChanges?.()),
+  aiConfig: {
+    mode: WORK_NOTES_AI_MODE,
+    backendUrl: WORK_NOTES_AI_BACKEND_URL,
+    channel: APP_CHANNEL,
+  },
 });
 const navigationKey = navigationStorageKey(APP_CHANNEL);
 let navigation = loadNavigation(globalThis.localStorage, navigationKey);

@@ -23,8 +23,17 @@ import {
   prepareCombinedBackupRestore,
   restoreCombinedBackup,
 } from "./storage.mjs";
-import { mountWorkNotesAiDemo } from "./work-notes-ai-demo.mjs";
+import { mountWorkNotesAi } from "./work-notes-ai.mjs";
 import { WORK_NOTES_TEMPLATE } from "./work-notes-template.mjs";
+
+export function buildAiFortnightContext(startDate, notes = {}) {
+  const dates = getFortnightDates(startDate);
+  return {
+    startDate,
+    endDate: dates[dates.length - 1],
+    notes: dates.map((date) => ({ date, text: notes[date]?.text ?? "" })),
+  };
+}
 
 export function mountWorkNotesApp(host, options = {}) {
 const root = host.shadowRoot || host.attachShadow({ mode: "open" });
@@ -598,7 +607,7 @@ function applyAiNoteText({ date, text }) {
   renderNotes();
   renderSummary();
   updateStorageUi();
-  if (saved) showToast("AI demonstration sample saved");
+  if (saved) showToast("AI result saved");
   return true;
 }
 
@@ -617,8 +626,8 @@ function openAiFollowUpDraft({ description, dueDate, sourceDate }) {
   $("#followup-source").value = sourceDate || "";
 }
 
-const aiDemo = mountWorkNotesAiDemo(root, {
-  provider: options.aiProvider,
+const aiAssistant = mountWorkNotesAi(root, {
+  config: options.aiConfig,
   applyNoteText: applyAiNoteText,
   reopenNote: reopenAiTargetNote,
   openFollowUpDraft: openAiFollowUpDraft,
@@ -641,7 +650,7 @@ function openAiFromNote(mode, button) {
     returnToNote: true,
   };
   closeNote();
-  requestAnimationFrame(() => aiDemo.open(mode, nextContext, button));
+  requestAnimationFrame(() => aiAssistant.open(mode, nextContext, button));
 }
 
 document.addEventListener("click", async (event) => {
@@ -748,8 +757,11 @@ $("#ai-organise-note").addEventListener("click", (event) => {
 $("#ai-create-followup-note").addEventListener("click", (event) => {
   openAiFromNote("followup", event.currentTarget);
 });
-$("#ai-summary-demo").addEventListener("click", (event) => {
-  aiDemo.open("summary", { returnToNote: false }, event.currentTarget);
+$("#ai-summary-action").addEventListener("click", (event) => {
+  aiAssistant.open("summary", {
+    returnToNote: false,
+    ...buildAiFortnightContext(displayedStart, data.notes),
+  }, event.currentTarget);
 });
 
 noteDialog.addEventListener("close", () => {

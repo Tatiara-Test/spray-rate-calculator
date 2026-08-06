@@ -765,6 +765,11 @@ h3 {
   line-height: 1.2;
 }
 
+.ai-demo-badge.live {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
 .ai-note-launcher,
 .ai-summary-demo-card {
   display: grid;
@@ -891,7 +896,8 @@ dialog::backdrop {
 }
 
 textarea,
-input[type="date"] {
+input[type="date"],
+input[type="password"] {
   width: 100%;
   border: 2px solid var(--line);
   border-radius: 12px;
@@ -912,7 +918,8 @@ textarea {
 }
 
 textarea:focus,
-input[type="date"]:focus {
+input[type="date"]:focus,
+input[type="password"]:focus {
   border-color: var(--green);
   outline: 0;
   box-shadow: 0 0 0 3px rgba(35, 107, 56, 0.14);
@@ -1008,6 +1015,77 @@ input[type="date"]:focus {
   font-weight: 700;
 }
 
+.ai-disconnected-banner button {
+  justify-self: start;
+  margin-top: 3px;
+}
+
+.ai-disconnected-banner.live {
+  border-color: #91b99a;
+  background: var(--green-soft);
+}
+
+.ai-disconnected-banner.live p,
+.ai-disconnected-banner.live small {
+  color: var(--green-dark);
+}
+
+.ai-access-panel,
+.ai-generation-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card-muted);
+  padding: 12px;
+}
+
+.ai-access-panel > div:first-child,
+.ai-generation-panel {
+  line-height: 1.4;
+}
+
+.ai-access-panel p,
+.ai-generation-panel p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.ai-access-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ai-consent-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.42;
+}
+
+.ai-consent-row input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--green);
+}
+
+.ai-consent-row a {
+  color: var(--green-dark);
+  font-weight: 800;
+}
+
+#ai-access-code {
+  min-height: 50px;
+  padding: 9px 10px;
+}
+
 .ai-recording-panel {
   display: grid;
   gap: 10px;
@@ -1066,6 +1144,21 @@ input[type="date"]:focus {
   min-height: 56px;
 }
 
+.ai-provisional-text {
+  margin: 0;
+  border-left: 4px solid #d7bd58;
+  border-radius: 8px;
+  background: #fffdf4;
+  color: var(--muted);
+  padding: 9px 10px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.ai-provisional-text strong {
+  color: #654b00;
+}
+
 #ai-load-sample {
   grid-column: 1 / -1;
 }
@@ -1094,6 +1187,11 @@ input[type="date"]:focus {
   min-height: 230px;
 }
 
+.ai-preview-field textarea[readonly] {
+  background: #f1f4f1;
+  color: #354238;
+}
+
 .ai-result-note {
   margin: 8px 2px 0;
   color: var(--muted);
@@ -1114,6 +1212,16 @@ input[type="date"]:focus {
 input[type="date"] {
   min-height: 50px;
   padding: 9px 10px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
 }
 
 .toast {
