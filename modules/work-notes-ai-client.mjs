@@ -1,9 +1,11 @@
 export const AI_ACCESS_KEY_PREFIX = "pallathorpe-private:work-notes-ai-access:v1";
 export const MAX_DICTATION_MS = 120_000;
+export const REALTIME_REQUEST_TIMEOUT_MS = 20_000;
+export const ASSIST_REQUEST_TIMEOUT_MS = 32_000;
 
-const REQUEST_TIMEOUT_MS = 20_000;
 const DATA_CHANNEL_TIMEOUT_MS = 15_000;
 const FINAL_TRANSCRIPT_TIMEOUT_MS = 20_000;
+const MAX_BACKEND_ERROR_LENGTH = 4_096;
 const MAX_ACCESS_CODE_LENGTH = 256;
 const MAX_SDP_LENGTH = 1_000_000;
 const MAX_ASSIST_PAYLOAD_LENGTH = 24 * 1024;
@@ -154,7 +156,83 @@ function normalizeBackendUrl(backendUrl) {
   return url.href.replace(/\/+$/, "");
 }
 
-function statusError(status) {
+const BACKEND_ERROR_COPY = Object.freeze({
+  ai_disabled: Object.freeze(["ai-disabled", "AI is currently switched off for this test.", false]),
+  service_not_configured: Object.freeze(["service-not-configured", "The AI service setup is incomplete.", false]),
+  openai_key_invalid: Object.freeze(["service-not-configured", "The AI service credential needs attention.", false]),
+  upstream_invalid_request: Object.freeze(["provider-request-invalid", "The AI provider rejected the request configuration.", false]),
+  upstream_auth_failed: Object.freeze(["provider-auth-failed", "The AI service credential needs attention.", false]),
+  upstream_model_unavailable: Object.freeze(["provider-model-unavailable", "The configured AI model is unavailable.", false]),
+  upstream_timeout: Object.freeze(["timeout", "The AI service took too long to respond.", true]),
+  upstream_quota_or_rate_limit: Object.freeze(["rate-limited", "The AI provider quota or rate limit was reached. Try again later.", true]),
+  upstream_rate_limited: Object.freeze(["rate-limited", "The AI provider limit was reached. Try again later.", true]),
+  upstream_unavailable: Object.freeze(["backend-unavailable", "The AI service is temporarily unavailable.", true]),
+  upstream_rejected_request: Object.freeze(["provider-rejected", "The AI provider rejected the request.", false]),
+  upstream_invalid_response: Object.freeze(["invalid-response", "The AI service returned an invalid response.", true]),
+  assist_incomplete: Object.freeze(["assist-incomplete", "The AI response was incomplete. Try again.", true]),
+  assist_refused: Object.freeze(["assist-refused", "The AI service could not complete that assist action.", false]),
+});
+
+function safeBackendErrorCode(value) {
+  if (!isPlainObject(value) || Object.keys(value).length !== 1 || !isPlainObject(value.error)) return "";
+  const keys = Object.keys(value.error).sort();
+  if (keys.length !== 2 || keys[0] !== "code" || keys[1] !== "message") return "";
+  const code = value.error.code;
+  return typeof code === "string" && /^[a-z0-9_]{1,64}$/.test(code) ? code : "";
+}
+
+async function backendErrorCode(response) {
+  try {
+    const type = response.headers?.get?.("content-type")?.toLowerCase() ?? "";
+    if (!type.includes("application/json")) return "";
+    const declaredLength = response.headers?.get?.("content-length") ?? "";
+    if (/^\d+$/.test(declaredLength) && Number(declaredLength) > MAX_BACKEND_ERROR_LENGTH) {
+      await response.body?.cancel?.();
+      return "";
+    }
+    const reader = response.body?.getReader?.();
+    if (!reader) return "";
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_BACKEND_ERROR_LENGTH) {
+          await reader.cancel();
+          return "";
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock?.();
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const text = decoder.decode(bytes);
+    if (!text) return "";
+    return safeBackendErrorCode(JSON.parse(text));
+  } catch {
+    return "";
+  }
+}
+
+function statusError(status, backendCode = "") {
+  const mapped = Object.hasOwn(BACKEND_ERROR_COPY, backendCode)
+    ? BACKEND_ERROR_COPY[backendCode]
+    : null;
+  if (mapped) {
+    return new AiServiceError(mapped[0], mapped[1], {
+      status,
+      retryable: mapped[2],
+    });
+  }
   if (status === 401 || status === 403) {
     return new AiServiceError("access-denied", "The AI access code was not accepted.", { status });
   }
@@ -312,7 +390,7 @@ export function createAiBackendClient({ backendUrl, accessStore, fetchFn }) {
     throw new AiServiceError("backend-unavailable", "Network requests are unavailable in this browser.");
   }
 
-  async function request(path, init, { signal } = {}) {
+  async function request(path, init, { signal, timeoutMs = REALTIME_REQUEST_TIMEOUT_MS } = {}) {
     if (signal?.aborted) throw new AiServiceError("cancelled", "The AI request was cancelled.");
     const controller = new AbortController();
     let timedOut = false;
@@ -321,13 +399,13 @@ export function createAiBackendClient({ backendUrl, accessStore, fetchFn }) {
     const timeoutId = globalThis.setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, REQUEST_TIMEOUT_MS);
+    }, timeoutMs);
     try {
       const response = await fetchFn(`${baseUrl}${path}`, { ...init, signal: controller.signal });
       if (!response || typeof response.ok !== "boolean" || typeof response.status !== "number") {
         throw new AiServiceError("invalid-response", "The AI service returned an invalid response.");
       }
-      if (!response.ok) throw statusError(response.status);
+      if (!response.ok) throw statusError(response.status, await backendErrorCode(response));
       return response;
     } catch (error) {
       if (error instanceof AiServiceError) throw error;
@@ -368,7 +446,7 @@ export function createAiBackendClient({ backendUrl, accessStore, fetchFn }) {
           "X-Tatiara-Access": accessCode(),
         },
         body: offer,
-      }, { signal });
+      }, { signal, timeoutMs: REALTIME_REQUEST_TIMEOUT_MS });
       const type = response.headers?.get?.("content-type")?.toLowerCase() ?? "";
       if (!type.includes("application/sdp")) {
         throw new AiServiceError("invalid-response", "The AI service did not return a realtime connection.");
@@ -389,7 +467,7 @@ export function createAiBackendClient({ backendUrl, accessStore, fetchFn }) {
           "X-Tatiara-Access": accessCode(),
         },
         body,
-      }, { signal });
+      }, { signal, timeoutMs: ASSIST_REQUEST_TIMEOUT_MS });
       const type = response.headers?.get?.("content-type")?.toLowerCase() ?? "";
       if (!type.includes("application/json")) {
         throw new AiServiceError("invalid-response", "The AI service did not return JSON.");

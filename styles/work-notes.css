@@ -376,6 +376,13 @@ h3 {
   margin-bottom: 12px;
 }
 
+.summary-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .section-help {
   margin: -3px 0 13px;
   color: var(--muted);
@@ -940,6 +947,11 @@ input[type="password"]:focus {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+.download-dialog-message {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .form-grid {
   display: grid;
   gap: 10px;
@@ -1271,6 +1283,16 @@ input[type="date"] {
 @media (max-width: 431px) {
   .section-intro {
     align-items: flex-start;
+  }
+
+  .summary-section-intro {
+    flex-direction: column;
+  }
+
+  .summary-export-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
   }
 
   .note-legend {

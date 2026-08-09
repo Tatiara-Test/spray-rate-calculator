@@ -51,21 +51,74 @@ function cloneAllocation(allocation) {
   return { ...allocation };
 }
 
-function cloneRun(run) {
+function cloneSelectedPaddock(selectedPaddock, index) {
+  if (!selectedPaddock || typeof selectedPaddock !== "object" || Array.isArray(selectedPaddock)) {
+    throw new TypeError(`Selected paddock ${index + 1} must be a record.`);
+  }
   return {
+    libraryEntryId: requiredText(
+      selectedPaddock.libraryEntryId,
+      `Selected paddock ${index + 1} library entry id`,
+    ),
+    name: requiredText(selectedPaddock.name, `Selected paddock ${index + 1} name`),
+    normalizedName: requiredText(
+      selectedPaddock.normalizedName,
+      `Selected paddock ${index + 1} normalized name`,
+    ),
+    totalHectares: optionalPositive(
+      selectedPaddock.totalHectares,
+      `Selected paddock ${index + 1} total hectares`,
+    ),
+    plannedHectares: optionalPositive(
+      selectedPaddock.plannedHectares,
+      `Selected paddock ${index + 1} planned hectares`,
+    ),
+  };
+}
+
+function cloneSelectedPaddocks(selectedPaddocks) {
+  if (!Array.isArray(selectedPaddocks)) {
+    throw new TypeError("Buffer selected paddocks must be an array.");
+  }
+  const libraryEntryIds = new Set();
+  const names = new Set();
+  const normalizedNames = new Set();
+  return selectedPaddocks.map((selectedPaddock, index) => {
+    const cloned = cloneSelectedPaddock(selectedPaddock, index);
+    if (libraryEntryIds.has(cloned.libraryEntryId)) {
+      throw new TypeError(`Selected paddock library entry id ${cloned.libraryEntryId} is duplicated.`);
+    }
+    const nameKey = cloned.name.toLocaleLowerCase("en-AU");
+    const normalizedNameKey = cloned.normalizedName.toLocaleLowerCase("en-AU");
+    if (names.has(nameKey) || normalizedNames.has(normalizedNameKey)) {
+      throw new TypeError(`Selected paddock name ${cloned.name} is duplicated.`);
+    }
+    libraryEntryIds.add(cloned.libraryEntryId);
+    names.add(nameKey);
+    normalizedNames.add(normalizedNameKey);
+    return cloned;
+  });
+}
+
+function cloneRun(run) {
+  const cloned = {
     ...run,
     products: (run.products || []).map(cloneProduct),
     allocations: (run.allocations || []).map(cloneAllocation),
   };
+  if (Object.hasOwn(run, "selectedPaddocks")) {
+    cloned.selectedPaddocks = cloneSelectedPaddocks(run.selectedPaddocks);
+  }
+  return cloned;
 }
 
 function assertRun(run) {
   if (!run || typeof run !== "object" || Array.isArray(run)) {
-    throw new TypeError("A paddock run is required.");
+    throw new TypeError("A buffer is required.");
   }
-  requiredText(run.id, "Run id");
+  requiredText(run.id, "Buffer id");
   if (!["active", "completed", "cancelled"].includes(run.status)) {
-    throw new RangeError("Run status must be active, completed or cancelled.");
+    throw new RangeError("Buffer status must be active, completed or cancelled.");
   }
   finiteNumber(run.controllerStartLitres, "Controller start", {
     minimum: 0,
@@ -81,9 +134,12 @@ function assertRun(run) {
   if (run.sprayMethod === "Broadacre" && sprayRate <= 0) {
     throw new RangeError("Broadacre spray rate must be greater than 0.");
   }
-  if (!Array.isArray(run.products)) throw new TypeError("Run products must be an array.");
+  if (!Array.isArray(run.products)) throw new TypeError("Buffer products must be an array.");
   run.products.forEach(cloneProduct);
-  if (!Array.isArray(run.allocations)) throw new TypeError("Run allocations must be an array.");
+  const selectedPaddocks = Object.hasOwn(run, "selectedPaddocks")
+    ? cloneSelectedPaddocks(run.selectedPaddocks)
+    : null;
+  if (!Array.isArray(run.allocations)) throw new TypeError("Buffer allocations must be an array.");
 
   let before = Number(run.controllerStartLitres);
   const ids = new Set();
@@ -95,7 +151,15 @@ function assertRun(run) {
     if (ids.has(allocationId)) throw new TypeError(`Allocation id ${allocationId} is duplicated.`);
     ids.add(allocationId);
     requiredText(allocation.paddockId, `Allocation ${index + 1} paddock id`);
-    requiredText(allocation.paddockName, `Allocation ${index + 1} paddock name`);
+    const allocationPaddockName = requiredText(allocation.paddockName, `Allocation ${index + 1} paddock name`);
+    if (
+      selectedPaddocks
+      && !selectedPaddocks.some(
+        (selection) => selection.name.toLocaleLowerCase("en-AU") === allocationPaddockName.toLocaleLowerCase("en-AU"),
+      )
+    ) {
+      throw new TypeError(`Allocation ${index + 1} paddock is not selected for this buffer.`);
+    }
     optionalPositive(allocation.paddockSizeHectares, `Allocation ${index + 1} paddock size`);
     const after = finiteNumber(
       allocation.controllerAfterLitres,
@@ -105,25 +169,25 @@ function assertRun(run) {
       throw new RangeError("Controller readings must decrease so every allocation records liquid used.");
     }
     if (after > before) {
-      throw new RangeError("Controller readings cannot increase within one tank run. Start a new run after a refill.");
+      throw new RangeError("Controller readings cannot increase within one buffer. Start a new buffer after a refill.");
     }
     before = after;
   });
   if (run.status === "completed" && !run.allocations.length) {
-    throw new Error("A completed paddock run must contain an allocation.");
+    throw new Error("A completed buffer must contain an allocation.");
   }
   if (run.status === "cancelled" && run.allocations.length) {
-    throw new Error("A cancelled paddock run cannot contain allocations.");
+    throw new Error("A cancelled buffer cannot contain allocations.");
   }
   if (run.status !== "active") {
     const final = finiteNumber(run.controllerFinalLitres, "Final controller reading");
-    if (final !== before) throw new Error("Final controller reading must match the last run boundary.");
+    if (final !== before) throw new Error("Final controller reading must match the last buffer boundary.");
   }
 }
 
 function assertActive(run) {
   assertRun(run);
-  if (run.status !== ACTIVE) throw new Error("Only an active paddock run can be changed.");
+  if (run.status !== ACTIVE) throw new Error("Only an active buffer can be changed.");
 }
 
 function finalControllerReading(run) {
@@ -154,12 +218,12 @@ export function validateControllerStartAgainstMix(controllerStartLitres, mixTota
 }
 
 export function createPaddockRun(input = {}) {
-  const id = requiredText(input.id, "Run id");
-  const runNumber = finiteNumber(input.runNumber, "Run number", {
+  const id = requiredText(input.id, "Buffer id");
+  const runNumber = finiteNumber(input.runNumber, "Buffer number", {
     minimum: 0,
     exclusiveMinimum: true,
   });
-  if (!Number.isInteger(runNumber)) throw new RangeError("Run number must be a whole number.");
+  if (!Number.isInteger(runNumber)) throw new RangeError("Buffer number must be a whole number.");
   const savedAt = timestampFrom(input, "savedAt", "createdAt", "startedAt");
   const updatedAt = cleanText(input.updatedAt) || savedAt;
   const machine = cleanText(input.machine) || null;
@@ -178,13 +242,13 @@ export function createPaddockRun(input = {}) {
   if (sprayMethod === "Broadacre" && sprayRate <= 0) {
     throw new RangeError("Broadacre spray rate must be greater than 0.");
   }
-  if (!Array.isArray(input.products)) throw new TypeError("Run products must be an array.");
+  if (!Array.isArray(input.products)) throw new TypeError("Buffer products must be an array.");
 
-  return {
+  const run = {
     id,
     runNumber,
     status: ACTIVE,
-    date: requiredText(input.date, "Run date"),
+    date: requiredText(input.date, "Buffer date"),
     savedAt,
     updatedAt,
     completedAt: null,
@@ -198,6 +262,10 @@ export function createPaddockRun(input = {}) {
     products: input.products.map(cloneProduct),
     allocations: [],
   };
+  if (input.selectedPaddocks !== undefined) {
+    run.selectedPaddocks = cloneSelectedPaddocks(input.selectedPaddocks);
+  }
+  return run;
 }
 
 export function addRunAllocation(run, input = {}) {
@@ -213,15 +281,24 @@ export function addRunAllocation(run, input = {}) {
     throw new RangeError("Controller readings must decrease so every allocation records liquid used.");
   }
   if (controllerAfterLitres > controllerBeforeLitres) {
-    throw new RangeError("Controller readings cannot increase within one tank run. Start a new run after a refill.");
+    throw new RangeError("Controller readings cannot increase within one buffer. Start a new buffer after a refill.");
   }
   const savedAt = timestampFrom(input, "savedAt", "createdAt", "recordedAt");
   const updatedAt = cleanText(input.updatedAt) || savedAt;
+  const paddockName = requiredText(input.paddockName, "Paddock name");
+  if (
+    Object.hasOwn(next, "selectedPaddocks")
+    && !next.selectedPaddocks.some(
+      (selection) => selection.name.toLocaleLowerCase("en-AU") === paddockName.toLocaleLowerCase("en-AU"),
+    )
+  ) {
+    throw new TypeError(`${paddockName} is not selected for this buffer.`);
+  }
 
   next.allocations.push({
     id,
     paddockId: requiredText(input.paddockId, "Paddock id"),
-    paddockName: requiredText(input.paddockName, "Paddock name"),
+    paddockName,
     paddockSizeHectares: optionalPositive(input.paddockSizeHectares, "Paddock size"),
     controllerAfterLitres,
     savedAt,
@@ -234,7 +311,7 @@ export function addRunAllocation(run, input = {}) {
 export function completePaddockRun(run, completedAt) {
   assertActive(run);
   if (!run.allocations.length) {
-    throw new Error("An empty paddock run must be cancelled, not completed.");
+    throw new Error("An empty buffer must be cancelled, not completed.");
   }
   const timestamp = requiredText(completedAt, "Completion timestamp");
   const next = cloneRun(run);
@@ -248,7 +325,7 @@ export function completePaddockRun(run, completedAt) {
 export function cancelEmptyPaddockRun(run, cancelledAt) {
   assertActive(run);
   if (run.allocations.length) {
-    throw new Error("A paddock run with allocations cannot be cancelled as empty.");
+    throw new Error("A buffer with allocations cannot be cancelled as empty.");
   }
   const timestamp = requiredText(cancelledAt, "Cancellation timestamp");
   const next = cloneRun(run);
@@ -295,6 +372,9 @@ export function materializeRunAllocations(run) {
       hectares: run.sprayMethod === "Broadacre" ? litresUsed / Number(run.sprayRate) : 0,
       products,
     };
+    if (Object.hasOwn(run, "selectedPaddocks")) {
+      materialized.selectedPaddocks = cloneSelectedPaddocks(run.selectedPaddocks);
+    }
     before = after;
     return materialized;
   });

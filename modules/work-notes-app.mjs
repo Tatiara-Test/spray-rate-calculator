@@ -20,10 +20,16 @@ import {
 import { APP_CHANNEL } from "../config.mjs";
 import {
   combinedBackupExport,
+  findLatestPreRestoreRecovery,
   prepareCombinedBackupRestore,
   restoreCombinedBackup,
 } from "./storage.mjs";
 import { mountWorkNotesAi } from "./work-notes-ai.mjs";
+import {
+  buildWorkNotesPdf,
+  workNotesExportDescriptor,
+} from "./work-notes-export.mjs";
+import { handFilesToShareSheet } from "./share-files.mjs";
 import { WORK_NOTES_TEMPLATE } from "./work-notes-template.mjs";
 
 export function buildAiFortnightContext(startDate, notes = {}) {
@@ -49,6 +55,8 @@ const document = {
 const $ = (selector) => root.querySelector(selector);
 const noteDialog = $("#note-dialog");
 const followupDialog = $("#followup-dialog");
+const workNotesDownloadDialog = $("#work-notes-download-dialog");
+const workNotesDownloadDialogMessage = $("#work-notes-download-dialog-message");
 const noteTextarea = $("#note-text");
 const restorePreviousButton = $("#restore-previous");
 const saveIndicator = $("#save-indicator");
@@ -65,6 +73,13 @@ let deferredInstallPrompt = null;
 let hasUnsavedDraft = false;
 let persistFailureMessage = "";
 let pendingLockedRestore = false;
+let pendingWorkNotesDownloads = null;
+let workNotesShareInProgress = false;
+let latestPreRestoreRecovery = null;
+const recoveryTimeFormatter = new Intl.DateTimeFormat("en-AU", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 function hasExternalUnsavedChanges() {
   try {
@@ -76,6 +91,17 @@ function hasExternalUnsavedChanges() {
 
 function combinedDataHasUnsavedChanges() {
   return hasUnsavedDraft || hasExternalUnsavedChanges();
+}
+
+function refreshPreviousStateRecovery() {
+  latestPreRestoreRecovery = findLatestPreRestoreRecovery(globalThis.localStorage);
+  const button = $("#download-previous-state-recovery");
+  const status = $("#previous-state-recovery-status");
+  button.hidden = !latestPreRestoreRecovery;
+  status.textContent = latestPreRestoreRecovery
+    ? `Captured ${recoveryTimeFormatter.format(new Date(latestPreRestoreRecovery.capturedAt))}. This support/recovery wrapper preserves the exact prior raw values for the records changed by that combined restore. It is not a standard combined backup and cannot be restored directly in this app.`
+    : "No verified previous-state recovery could be found. Browser storage may be empty or unavailable.";
+  return latestPreRestoreRecovery;
 }
 
 function readLocalData() {
@@ -411,6 +437,7 @@ function renderAll() {
   renderFollowUps();
   renderAttention();
   updateStorageUi();
+  refreshPreviousStateRecovery();
 }
 
 function activateSection(section) {
@@ -488,8 +515,7 @@ async function copyText(text) {
   return copied;
 }
 
-function downloadText(filename, text, type) {
-  const blob = new Blob([text], { type });
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -497,7 +523,70 @@ function downloadText(filename, text, type) {
   document.body.append(link);
   link.click();
   link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadText(filename, text, type) {
+  downloadBlob(new Blob([text], { type }), filename);
+}
+
+function closeWorkNotesDownloadOptions() {
+  if (workNotesDownloadDialog.open) workNotesDownloadDialog.close();
+  pendingWorkNotesDownloads = null;
+}
+
+async function prepareWorkNotesCopies() {
+  if (workNotesShareInProgress) return;
+  workNotesShareInProgress = true;
+  updateWriteLockControls();
+  const textExport = fortnightTextExport(data, displayedStart);
+  const descriptor = workNotesExportDescriptor(displayedStart);
+  try {
+    const pdfBytes = await buildWorkNotesPdf(data, descriptor);
+    const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+    const textBlob = new Blob([textExport.text], { type: "text/plain;charset=utf-8" });
+    pendingWorkNotesDownloads = {
+      pdfBlob,
+      textBlob,
+      filenames: descriptor.filenames,
+    };
+
+    const files = typeof File === "function"
+      ? [
+          new File([pdfBlob], descriptor.filenames.pdf, { type: pdfBlob.type }),
+          new File([textBlob], descriptor.filenames.text, { type: textBlob.type }),
+        ]
+      : [];
+    const shareResult = await handFilesToShareSheet({
+      navigatorLike: navigator,
+      files,
+      title: "Pallathorpe Work Notes",
+      text: `Work Notes for ${descriptor.startIso} to ${descriptor.endIso}.`,
+    });
+    if (shareResult.mode === "shared") {
+      pendingWorkNotesDownloads = null;
+      showToast("Copies handed to your phone for sharing.");
+      return;
+    }
+    if (shareResult.mode === "cancelled") {
+      pendingWorkNotesDownloads = null;
+      return;
+    }
+
+    const nativeShareFailed = shareResult.reason === "share-failed";
+    workNotesDownloadDialogMessage.textContent = nativeShareFailed
+      ? "Native sharing was unavailable. Your PDF and text copies are ready to download."
+      : "Your phone cannot share both files together. Download each copy, then choose where to save or send it.";
+    workNotesDownloadDialog.showModal();
+    showToast(nativeShareFailed
+      ? "Native sharing was unavailable. PDF and text copies are ready to download."
+      : "PDF and text copies are ready to download.");
+  } catch (error) {
+    showToast(error?.message || "Work Notes copies could not be generated.", true);
+  } finally {
+    workNotesShareInProgress = false;
+    updateWriteLockControls();
+  }
 }
 
 function updateWriteLockControls() {
@@ -510,6 +599,7 @@ function updateWriteLockControls() {
   $("#ai-organise-note").disabled = locked || !noteTextarea.value.trim();
   $("#ai-create-followup-note").disabled = locked || !noteTextarea.value.trim();
   $("#add-followup").disabled = locked;
+  $("#share-work-notes").disabled = locked || workNotesShareInProgress;
   $("#export-text").disabled = locked;
   $("#export-backup").disabled = locked;
   $("#export-combined-backup").disabled = locked || combinedDataHasUnsavedChanges();
@@ -870,6 +960,21 @@ $("#export-text").addEventListener("click", () => {
   showToast("Fortnight text exported");
 });
 
+$("#share-work-notes").addEventListener("click", prepareWorkNotesCopies);
+$("#download-work-notes-pdf").addEventListener("click", () => {
+  if (!pendingWorkNotesDownloads) return;
+  downloadBlob(pendingWorkNotesDownloads.pdfBlob, pendingWorkNotesDownloads.filenames.pdf);
+});
+$("#download-work-notes-text").addEventListener("click", () => {
+  if (!pendingWorkNotesDownloads) return;
+  downloadBlob(pendingWorkNotesDownloads.textBlob, pendingWorkNotesDownloads.filenames.text);
+});
+$("#close-work-notes-download-dialog").addEventListener("click", closeWorkNotesDownloadOptions);
+$("#close-work-notes-download-dialog-x").addEventListener("click", closeWorkNotesDownloadOptions);
+workNotesDownloadDialog.addEventListener("close", () => {
+  pendingWorkNotesDownloads = null;
+});
+
 $("#export-backup").addEventListener("click", () => {
   const exported = backupExport(data);
   downloadText(exported.filename, exported.text, "application/json;charset=utf-8");
@@ -879,7 +984,7 @@ $("#export-backup").addEventListener("click", () => {
 $("#export-combined-backup").addEventListener("click", () => {
   if (storageLock || combinedDataHasUnsavedChanges()) {
     showToast(
-      "Combined backup is unavailable while Spray, Weather or Work Notes has unsaved changes. Use that section’s recovery controls first.",
+      "Combined backup is unavailable while Spray, Weather, Settings or Work Notes has unsaved changes. Use that section’s recovery controls first.",
       true,
     );
     return;
@@ -897,6 +1002,20 @@ $("#export-combined-backup").addEventListener("click", () => {
       `Combined backup could not be created: ${error?.message || "stored data could not be read."}`,
       true,
     );
+  }
+});
+
+$("#download-previous-state-recovery").addEventListener("click", () => {
+  const recovery = refreshPreviousStateRecovery();
+  if (!recovery) {
+    showToast("No verified previous-state recovery is available to download.", true);
+    return;
+  }
+  try {
+    downloadText(recovery.filename, recovery.text, "application/json;charset=utf-8");
+    showToast("Previous-state recovery download started");
+  } catch (error) {
+    showToast(`Previous-state recovery could not be prepared: ${error?.message || "browser download support is unavailable."}`, true);
   }
 });
 
@@ -922,11 +1041,16 @@ $("#combined-restore-file").addEventListener("change", async (event) => {
       normalizeWorkNotes: normalizeBackup,
     });
     const hasPaddocks = Object.hasOwn(prepared.datasets, "paddocks");
+    const hasPaddockLibrary = Object.hasOwn(prepared.datasets, "paddockLibrary");
     const hasWorkNotes = Object.hasOwn(prepared.datasets, "workNotes");
     const paddockCount = prepared.datasets.paddocks?.paddocks?.length ?? 0;
+    const libraryCount = prepared.datasets.paddockLibrary?.entries?.length ?? 0;
     const noteCount = Object.keys(prepared.datasets.workNotes?.notes ?? {}).length;
     const followUpCount = prepared.datasets.workNotes?.followUps?.length ?? 0;
     const paddockSummary = hasPaddocks ? `${paddockCount} paddocks` : "current paddocks unchanged";
+    const librarySummary = hasPaddockLibrary
+      ? `${libraryCount} Paddock Library entries`
+      : "current Paddock Library unchanged";
     const workNotesSummary = hasWorkNotes
       ? `${noteCount} Work Notes and ${followUpCount} follow-ups`
       : "current Work Notes unchanged";
@@ -953,19 +1077,26 @@ $("#combined-restore-file").addEventListener("change", async (event) => {
       workNotes: "Work Notes",
       profile: "operator profile",
       weatherSettings: "Weather settings",
+      paddockLibrary: "Paddock Library",
     })[name] || name);
     const skippedLegacyWarning = skippedLegacyLabels.length
       ? `\n\nThis older backup contains ambiguous empty data for ${skippedLegacyLabels.join(", ")}. Those datasets will be skipped and their current device records left unchanged.`
       : "";
     const confirmed = window.confirm(
-      `Apply this combined backup: ${paddockSummary}; ${workNotesSummary}? Operator profile and Weather settings are also replaced when included. A zero count clears that included section. A verified recovery snapshot is saved first, and the original legacy keys are never changed.${skippedLegacyWarning}${sourceWarning}`,
+      `Apply this combined backup: ${paddockSummary}; ${librarySummary}; ${workNotesSummary}? Operator profile and Weather settings are also replaced when included. A zero count clears that included section. A verified recovery snapshot is saved first, and the original legacy keys are never changed.${skippedLegacyWarning}${sourceWarning}`,
     );
     if (!confirmed) return;
 
-    restoreCombinedBackup(prepared, localStorage, new Date());
-    showToast("Combined backup restored. Reloading the app…");
+    const restoreResult = restoreCombinedBackup(prepared, localStorage, new Date());
+    const recovery = refreshPreviousStateRecovery();
+    showToast(
+      recovery?.key === restoreResult.recoveryKey
+        ? "Combined backup restored. Previous-state recovery saved. Reloading the app…"
+        : "Combined backup restored. Reloading the app…",
+    );
     window.setTimeout(() => window.location.reload(), 650);
   } catch (error) {
+    if (error?.recoveryKey) refreshPreviousStateRecovery();
     showToast(`Combined backup was not restored: ${error?.message || "the file is not valid."}`, true);
   }
 });

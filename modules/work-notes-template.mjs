@@ -42,7 +42,7 @@ export const WORK_NOTES_TEMPLATE = `
           <div id="notes-weeks"></div>
         </section>
         <section id="summary-section" class="app-section" role="tabpanel" aria-labelledby="summary-tab" data-section="summary" hidden>
-          <div class="section-intro"><div><p class="eyebrow">Ready for wages</p><h2>Fortnight summary</h2></div><button id="export-text" class="secondary-button compact-button" type="button">Export text</button></div>
+          <div class="section-intro summary-section-intro"><div><p class="eyebrow">Ready for wages</p><h2>Fortnight summary</h2></div><div class="summary-export-actions"><button id="share-work-notes" class="primary-button compact-button" type="button">Share / Save Copy</button><button id="export-text" class="secondary-button compact-button" type="button">Export text</button></div></div>
           <section class="ai-summary-demo-card" aria-labelledby="ai-summary-title">
             <div><span id="ai-summary-badge" class="ai-demo-badge">AI · SETUP NEEDED</span><h3 id="ai-summary-title">AI fortnight summary</h3><p id="ai-summary-copy">When securely connected, AI can draft a summary from only the displayed fortnight for you to review and copy.</p></div>
             <button id="ai-summary-action" class="secondary-button compact-button" type="button">Draft summary</button>
@@ -58,8 +58,15 @@ export const WORK_NOTES_TEMPLATE = `
             <div class="data-actions"><button id="export-backup" class="secondary-button" type="button">Download Work Notes JSON</button><button id="choose-restore" class="quiet-button" type="button">Restore Work Notes JSON</button><input id="restore-file" type="file" accept="application/json,.json" hidden /></div>
           </section>
           <section class="data-card combined-data-card" aria-labelledby="combined-data-title">
-            <div><p class="eyebrow">Whole combined app</p><h3 id="combined-data-title">Combined backup</h3><p>Includes paddocks, Work Notes, operator settings, location and saved weather links. It never alters the original legacy storage keys.</p></div>
-            <div class="data-actions"><button id="export-combined-backup" class="secondary-button" type="button">Download combined JSON</button><button id="restore-combined-backup" class="quiet-button" type="button">Restore combined JSON</button><input id="combined-restore-file" type="file" accept="application/json,.json" hidden /></div>
+            <div><p class="eyebrow">Whole combined app</p><h3 id="combined-data-title">Combined backup</h3><p>Includes paddock history, the Paddock Library, Work Notes, operator settings, location and saved weather links. It never alters the original legacy storage keys.</p></div>
+            <div class="data-actions">
+              <button id="export-combined-backup" class="secondary-button" type="button">Download combined JSON</button><button id="restore-combined-backup" class="quiet-button" type="button">Restore combined JSON</button><input id="combined-restore-file" type="file" accept="application/json,.json" hidden />
+              <div class="previous-state-recovery" aria-labelledby="previous-state-recovery-title">
+                <strong id="previous-state-recovery-title">Previous-state recovery</strong>
+                <p id="previous-state-recovery-status">No verified previous-state recovery could be found. Browser storage may be empty or unavailable.</p>
+                <button id="download-previous-state-recovery" class="secondary-button" type="button" hidden>Download previous-state recovery</button>
+              </div>
+            </div>
           </section>
         </section>
       </main>
@@ -83,6 +90,13 @@ export const WORK_NOTES_TEMPLATE = `
       <div class="form-grid"><label class="form-field"><span>Due date <small>optional</small></span><input id="followup-due" type="date" /></label><label class="form-field"><span>Original note date <small>optional</small></span><input id="followup-source" type="date" /></label></div>
       <div class="dialog-actions"><button id="cancel-followup" class="quiet-button" type="button">Cancel</button><button class="primary-button" type="submit">Save follow-up</button></div>
     </form></dialog>
+    <dialog id="work-notes-download-dialog" aria-labelledby="work-notes-download-dialog-title" aria-describedby="work-notes-download-dialog-message">
+      <div class="dialog-shell">
+        <header class="dialog-header"><div><p class="eyebrow">Copies ready</p><h2 id="work-notes-download-dialog-title">Download Work Notes</h2></div><button id="close-work-notes-download-dialog-x" class="square-button close-button" type="button" aria-label="Close download options">×</button></header>
+        <p id="work-notes-download-dialog-message" class="download-dialog-message">Your PDF and text copies are ready to download.</p>
+        <div class="dialog-actions work-notes-download-actions"><button id="download-work-notes-pdf" class="secondary-button" type="button">Download PDF</button><button id="download-work-notes-text" class="secondary-button" type="button">Download text</button><button id="close-work-notes-download-dialog" class="quiet-button" type="button">Close</button></div>
+      </div>
+    </dialog>
     <dialog id="ai-demo-dialog" class="ai-demo-dialog" aria-labelledby="ai-demo-title">
       <div class="ai-demo-shell">
         <header class="ai-demo-header"><div><span id="ai-dialog-badge" class="ai-demo-badge">AI SETUP NEEDED</span><h2 id="ai-demo-title">AI assistant</h2></div><button id="ai-close" class="square-button close-button" type="button" aria-label="Close AI assistant">×</button></header>

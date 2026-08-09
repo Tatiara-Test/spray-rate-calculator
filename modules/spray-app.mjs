@@ -1,14 +1,25 @@
 import { SPRAY_TEMPLATE } from "./spray-template.mjs";
 import {
   MACHINES,
+  PADDOCK_LIBRARY_VERSION,
   PADDOCK_STORE_VERSION,
   PADDOCKS_KEY,
   PROFILE_VERSION,
+  ensurePaddockLibrarySeeded,
+  inspectPaddockLibraryStore,
   inspectPaddockStore,
   inspectProfileStore,
+  persistPaddockLibrary,
   persistPaddockStore,
   persistProfile,
 } from "./storage.mjs";
+import {
+  activeLibraryEntries,
+  createLibraryEntry,
+  createSelectedPaddockSnapshot,
+  findLibraryEntryById,
+  findLibraryEntryByName,
+} from "./paddock-library.mjs";
 import { calculatePaddockBalance } from "./paddock-balance.mjs";
 import {
   MAX_ACTIVE_PADDOCKS,
@@ -46,7 +57,7 @@ import {
   usedCalculatorProducts,
 } from "./product-records.mjs";
 
-export function mountSprayApp(host) {
+export function mountSprayApp(host, options = {}) {
 const root = host.shadowRoot || host.attachShadow({ mode: "open" });
 root.innerHTML = SPRAY_TEMPLATE;
 const browserDocument = globalThis.document;
@@ -95,8 +106,12 @@ const cancelEditButton = document.querySelector("#cancel-edit");
 const saveDialog = document.querySelector("#save-dialog");
 const saveForm = document.querySelector("#save-form");
 const saveDialogTitle = document.querySelector("#save-dialog-title");
+const saveLibraryPaddock = document.querySelector("#save-library-paddock");
+const saveNewPaddockFields = document.querySelector("#save-new-paddock-fields");
 const savePaddockName = document.querySelector("#save-paddock-name");
 const savePaddockSize = document.querySelector("#save-paddock-size");
+const savePaddockTotal = document.querySelector("#save-paddock-total");
+const savePlannedHectares = document.querySelector("#save-planned-hectares");
 const saveSprayDate = document.querySelector("#save-spray-date");
 const saveTankTotal = document.querySelector("#save-tank-total");
 const saveSprayRate = document.querySelector("#save-spray-rate");
@@ -104,7 +119,6 @@ const saveArea = document.querySelector("#save-area");
 const saveProductList = document.querySelector("#save-product-list");
 const saveError = document.querySelector("#save-error");
 const confirmSaveButton = document.querySelector("#confirm-save");
-const paddockSuggestions = document.querySelector("#paddock-suggestions");
 const chemicalSuggestions = document.querySelector("#chemical-suggestions");
 const toast = document.querySelector("#toast");
 const storageLockWarning = document.querySelector("#storage-lock-warning");
@@ -115,6 +129,9 @@ const profileLockWarning = document.querySelector("#profile-lock-warning");
 const profileLockTitle = document.querySelector("#profile-lock-title");
 const profileLockMessage = document.querySelector("#profile-lock-message");
 const downloadOriginalProfileButton = document.querySelector("#download-original-profile");
+const libraryLockWarning = document.querySelector("#library-lock-warning");
+const libraryLockTitle = document.querySelector("#library-lock-title");
+const libraryLockMessage = document.querySelector("#library-lock-message");
 const writeRecoveryWarning = document.querySelector("#write-recovery-warning");
 const retryRecordSaveButton = document.querySelector("#retry-record-save");
 const downloadUnsavedRecordsButton = document.querySelector("#download-unsaved-records");
@@ -145,6 +162,7 @@ const activeRunMeta = document.querySelector("#active-run-meta");
 const runAllocationForm = document.querySelector("#run-allocation-form");
 const runPaddockName = document.querySelector("#run-paddock-name");
 const runPaddockSize = document.querySelector("#run-paddock-size");
+const runSelectedPlan = document.querySelector("#run-selected-plan");
 const runControllerBefore = document.querySelector("#run-controller-before");
 const runControllerAfter = document.querySelector("#run-controller-after");
 const runAllocationPreview = document.querySelector("#run-allocation-preview");
@@ -165,14 +183,28 @@ const runSprayRate = document.querySelector("#run-spray-rate");
 const runProductCount = document.querySelector("#run-product-count");
 const runStartError = document.querySelector("#run-start-error");
 const confirmStartRun = document.querySelector("#confirm-start-run");
+const runStartLibraryPaddock = document.querySelector("#run-start-library-paddock");
+const runStartPlannedHectares = document.querySelector("#run-start-planned-hectares");
+const runStartNewPaddockFields = document.querySelector("#run-start-new-paddock-fields");
+const runStartNewPaddockName = document.querySelector("#run-start-new-paddock-name");
+const runStartNewPaddockTotal = document.querySelector("#run-start-new-paddock-total");
+const runStartAddPaddock = document.querySelector("#run-start-add-paddock");
+const runStartSelectedPaddocks = document.querySelector("#run-start-selected-paddocks");
+const runStartPaddockError = document.querySelector("#run-start-paddock-error");
+const activeRunLibraryPaddock = document.querySelector("#active-run-library-paddock");
+const activeRunPlannedHectares = document.querySelector("#active-run-planned-hectares");
+const activeRunNewPaddockFields = document.querySelector("#active-run-new-paddock-fields");
+const activeRunNewPaddockName = document.querySelector("#active-run-new-paddock-name");
+const activeRunNewPaddockTotal = document.querySelector("#active-run-new-paddock-total");
+const activeRunAddPaddock = document.querySelector("#active-run-add-paddock");
+const activeRunSelectedPaddocks = document.querySelector("#active-run-selected-paddocks");
+const activeRunPaddockError = document.querySelector("#active-run-paddock-error");
 
 let visibleProducts = 4;
 let expandedPaddockId = null;
 let editingNoteId = null;
 let editingTankContext = null;
 let toastTimer = null;
-let autoFilledSavePaddockSize = null;
-let autoFilledRunPaddockSize = null;
 const storeInspection = inspectStore();
 const storageWriteLocked = ["corrupt", "future"].includes(storeInspection.status);
 let store = storeInspection.status === "ready"
@@ -184,6 +216,20 @@ let store = storeInspection.status === "ready"
       runs: [],
       activeRunId: null,
     };
+let librarySeedResult = { status: "absent", value: null, seededCount: 0 };
+if (storeInspection.status === "ready") {
+  try {
+    librarySeedResult = ensurePaddockLibrarySeeded(store);
+  } catch (error) {
+    librarySeedResult = { status: "error", value: null, error };
+  }
+}
+let libraryInspection = inspectPaddockLibraryStore();
+let libraryWriteLocked = ["corrupt", "future"].includes(libraryInspection.status)
+  || (librarySeedResult.status === "error" && libraryInspection.status !== "ready");
+let paddockLibrary = libraryInspection.status === "ready"
+  ? libraryInspection.value
+  : { version: PADDOCK_LIBRARY_VERSION, entries: [] };
 let profileInspection = inspectProfile();
 let profileWriteLocked = ["corrupt", "future"].includes(profileInspection.status);
 let profile = profileInspection.status === "ready"
@@ -191,7 +237,20 @@ let profile = profileInspection.status === "ready"
   : { version: PROFILE_VERSION, operator: null, operatorPrompted: false, lastMachine: MACHINES[0] };
 let pendingReview = null;
 let pendingDownloads = null;
-const pendingPersistence = { records: false, profile: false };
+let pendingRunSelections = [];
+const pendingPersistence = { records: false, profile: false, library: false };
+
+function hasExternalUnsavedLibraryChanges() {
+  try {
+    return options.hasExternalUnsavedLibraryChanges?.() === true;
+  } catch {
+    return true;
+  }
+}
+
+function libraryMutationLocked() {
+  return libraryWriteLocked || hasExternalUnsavedLibraryChanges();
+}
 
 const twoDecimals = new Intl.NumberFormat("en-AU", {
   maximumFractionDigits: 2,
@@ -246,8 +305,20 @@ function renderStorageWarnings() {
       : "This device profile could not be read. It remains untouched; tank records can still be saved with their own operator and machine details.";
     downloadOriginalProfileButton.disabled = typeof profileInspection.raw !== "string";
   }
-  writeRecoveryWarning.hidden = !pendingPersistence.records && !pendingPersistence.profile;
-  paddockStorageStatus.textContent = pendingPersistence.records
+  libraryLockWarning.hidden = !libraryWriteLocked;
+  if (libraryWriteLocked) {
+    const seedFailed = librarySeedResult.status === "error" && libraryInspection.status !== "ready";
+    libraryLockTitle.textContent = seedFailed
+      ? "Paddock Library could not be started"
+      : "Paddock Library protected";
+    libraryLockMessage.textContent = seedFailed
+      ? "Existing paddock history was left unchanged. Open Settings to retry the first-use Library setup before adding a new paddock."
+      : "The saved Paddock Library needs review in Settings and will not be overwritten from Spray Operations.";
+  }
+  writeRecoveryWarning.hidden = !pendingPersistence.records
+    && !pendingPersistence.profile
+    && !pendingPersistence.library;
+  paddockStorageStatus.textContent = pendingPersistence.records || pendingPersistence.library
     ? "Recent changes are not saved on this device"
     : "Saved on this phone only";
 }
@@ -324,6 +395,198 @@ function optionalPositiveValue(field) {
   if (!field || field.value === "") return null;
   const value = Number(field.value);
   return Number.isFinite(value) && value > 0 ? value : NaN;
+}
+
+const NEW_LIBRARY_ENTRY = "__new__";
+const HISTORY_PADDOCK_PREFIX = "history:";
+
+function formatOptionalHectares(value) {
+  return Number.isFinite(Number(value)) && Number(value) > 0
+    ? `${twoDecimals.format(Number(value))} ha`
+    : "Not set";
+}
+
+function refreshPaddockLibrary() {
+  if (pendingPersistence.library) {
+    return { status: "pending", value: paddockLibrary, raw: null };
+  }
+  libraryInspection = inspectPaddockLibraryStore();
+  libraryWriteLocked = ["corrupt", "future"].includes(libraryInspection.status)
+    || (librarySeedResult.status === "error" && libraryInspection.status !== "ready");
+  paddockLibrary = libraryInspection.status === "ready"
+    ? libraryInspection.value
+    : { version: PADDOCK_LIBRARY_VERSION, entries: [] };
+  refreshSuggestions();
+  if (getActiveRun()) renderRunView();
+  return libraryInspection;
+}
+
+function persistLibrary(nextLibrary) {
+  if (hasExternalUnsavedLibraryChanges()) {
+    renderStorageWarnings();
+    return false;
+  }
+  paddockLibrary = nextLibrary;
+  try {
+    persistPaddockLibrary(paddockLibrary);
+    libraryInspection = { status: "ready", value: paddockLibrary, raw: JSON.stringify(paddockLibrary) };
+    libraryWriteLocked = false;
+    pendingPersistence.library = false;
+    renderStorageWarnings();
+    return true;
+  } catch (error) {
+    if (error?.code === "PROTECTED_EXISTING_DATA" && error.inspection) {
+      libraryInspection = error.inspection;
+      libraryWriteLocked = true;
+    }
+    markPersistenceFailure("library");
+    return false;
+  }
+}
+
+function addSelectOption(select, value, label, { selected = false, disabled = false } = {}) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  option.selected = selected;
+  option.disabled = disabled;
+  select.append(option);
+  return option;
+}
+
+function populateLibrarySelect(select, {
+  selectedId = "",
+  allowNew = true,
+  includeHistoryFallback = false,
+  excludeIds = [],
+} = {}) {
+  const excluded = new Set(excludeIds);
+  select.replaceChildren();
+  const placeholder = hasExternalUnsavedLibraryChanges()
+    ? "Settings has an unsaved Paddock Library change"
+    : libraryWriteLocked
+      ? "Paddock Library needs review in Settings"
+      : "Select a saved paddock";
+  addSelectOption(select, "", placeholder, {
+    selected: !selectedId,
+  });
+  select.disabled = hasExternalUnsavedLibraryChanges();
+  const entries = activeLibraryEntries(paddockLibrary)
+    .filter((entry) => !excluded.has(entry.id))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const selectedEntry = selectedId ? findLibraryEntryById(paddockLibrary, selectedId) : null;
+  if (selectedEntry?.archivedAt && !excluded.has(selectedEntry.id)) entries.unshift(selectedEntry);
+  for (const entry of entries) {
+    addSelectOption(
+      select,
+      entry.id,
+      `${entry.name}${entry.archivedAt ? " (archived snapshot)" : entry.totalHectares ? ` · ${twoDecimals.format(entry.totalHectares)} ha` : ""}`,
+      { selected: entry.id === selectedId },
+    );
+  }
+  if (includeHistoryFallback && libraryInspection.status !== "ready") {
+    for (const paddock of activePaddocks(store.paddocks).sort((left, right) => left.name.localeCompare(right.name))) {
+      const value = `${HISTORY_PADDOCK_PREFIX}${paddock.id}`;
+      addSelectOption(select, value, `${paddock.name} · existing history`, { selected: value === selectedId });
+    }
+  }
+  if (allowNew && !libraryMutationLocked()) {
+    addSelectOption(select, NEW_LIBRARY_ENTRY, "Add new paddock…", { selected: selectedId === NEW_LIBRARY_ENTRY });
+  }
+}
+
+function setNewPaddockFields(select, fields) {
+  fields.hidden = select.value !== NEW_LIBRARY_ENTRY;
+}
+
+function libraryEntryFromSelection(select) {
+  if (!select?.value || select.value === NEW_LIBRARY_ENTRY || select.value.startsWith(HISTORY_PADDOCK_PREFIX)) return null;
+  return findLibraryEntryById(paddockLibrary, select.value);
+}
+
+function createOperationalLibraryEntry(nameField, totalField, errorElement) {
+  if (hasExternalUnsavedLibraryChanges()) {
+    errorElement.textContent = "Resolve the unsaved Paddock Library change in Settings before adding another paddock here.";
+    errorElement.hidden = false;
+    return null;
+  }
+  const name = cleanName(nameField.value);
+  const totalHectares = optionalPositiveValue(totalField);
+  if (!name || Number.isNaN(totalHectares)) {
+    errorElement.textContent = Number.isNaN(totalHectares)
+      ? "Saved total hectares must be blank or greater than zero."
+      : "Enter a name for the new paddock.";
+    errorElement.hidden = false;
+    return null;
+  }
+  const existing = findLibraryEntryByName(paddockLibrary, name, { includeArchived: true });
+  if (existing) {
+    errorElement.textContent = existing.archivedAt
+      ? `${existing.name} is archived in Settings. Restore it there before selecting it for a new job.`
+      : `${existing.name} is already saved. Select it from the paddock list.`;
+    errorElement.hidden = false;
+    return null;
+  }
+  try {
+    const entry = createLibraryEntry({ name, totalHectares });
+    const nextLibrary = {
+      version: PADDOCK_LIBRARY_VERSION,
+      entries: [...paddockLibrary.entries, entry],
+    };
+    if (!persistLibrary(nextLibrary)) {
+      errorElement.textContent = "The new paddock could not be verified on this phone. Nothing was added to the spray job.";
+      errorElement.hidden = false;
+      return null;
+    }
+    return entry;
+  } catch (error) {
+    errorElement.textContent = error?.message || "The new paddock is not valid.";
+    errorElement.hidden = false;
+    return null;
+  }
+}
+
+function resolveOperationalSelection({
+  select,
+  plannedField,
+  newNameField,
+  newTotalField,
+  errorElement,
+  allowHistoryFallback = false,
+}) {
+  const plannedHectares = optionalPositiveValue(plannedField);
+  if (Number.isNaN(plannedHectares)) {
+    errorElement.textContent = "Planned hectares must be blank or greater than zero.";
+    errorElement.hidden = false;
+    return null;
+  }
+  if (allowHistoryFallback && select.value.startsWith(HISTORY_PADDOCK_PREFIX)) {
+    const paddock = findPaddock(select.value.slice(HISTORY_PADDOCK_PREFIX.length));
+    return paddock ? {
+      entry: null,
+      name: paddock.name,
+      totalHectares: paddock.sizeHectares,
+      plannedHectares,
+      snapshot: null,
+    } : null;
+  }
+  const entry = select.value === NEW_LIBRARY_ENTRY
+    ? createOperationalLibraryEntry(newNameField, newTotalField, errorElement)
+    : libraryEntryFromSelection(select);
+  if (!entry) {
+    if (errorElement.hidden) {
+      errorElement.textContent = "Select a saved paddock or add a new one.";
+      errorElement.hidden = false;
+    }
+    return null;
+  }
+  return {
+    entry,
+    name: entry.name,
+    totalHectares: entry.totalHectares,
+    plannedHectares,
+    snapshot: createSelectedPaddockSnapshot(entry, plannedHectares),
+  };
 }
 
 function updateMethodOptions(machineField, methodField, noteField) {
@@ -627,6 +890,28 @@ function findTank(paddock, tankId) {
   return paddock?.tanks.find((tank) => tank.id === tankId);
 }
 
+function findPaddockByLibraryEntry(entry) {
+  if (!entry?.id) return null;
+  const seededSource = entry.sourcePaddockId ? findPaddock(entry.sourcePaddockId) : null;
+  if (seededSource) return seededSource;
+  const tankLinked = store.paddocks.find((paddock) =>
+    paddock.tanks.some((tank) => tank.paddockSelection?.libraryEntryId === entry.id),
+  );
+  if (tankLinked) return tankLinked;
+  for (const run of store.runs) {
+    const selection = (run.selectedPaddocks || []).find(
+      (candidate) => candidate.libraryEntryId === entry.id,
+    );
+    if (!selection) continue;
+    const allocation = run.allocations.find(
+      (candidate) => normalizeName(candidate.paddockName) === selection.normalizedName,
+    );
+    const runLinked = allocation ? findPaddock(allocation.paddockId) : null;
+    if (runLinked) return runLinked;
+  }
+  return null;
+}
+
 function getActiveRun() {
   return store.runs.find((run) => run.id === store.activeRunId && run.status === "active") || null;
 }
@@ -645,8 +930,14 @@ function recordsForPaddock(paddock) {
 }
 
 function paddockHasActiveRunAllocation(paddockId) {
+  const paddock = findPaddock(paddockId);
   return store.runs.some(
-    (run) => run.status === "active" && run.allocations.some((allocation) => allocation.paddockId === paddockId),
+    (run) => run.status === "active" && (
+      run.allocations.some((allocation) => allocation.paddockId === paddockId)
+      || (paddock && (run.selectedPaddocks || []).some(
+        (selection) => selection.normalizedName === paddock.normalizedName,
+      ))
+    ),
   );
 }
 
@@ -675,15 +966,6 @@ function sourceRecordForDisplay(record) {
 }
 
 function refreshSuggestions() {
-  paddockSuggestions.replaceChildren();
-  activePaddocks(store.paddocks)
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .forEach((paddock) => {
-      const option = document.createElement("option");
-      option.value = paddock.name;
-      paddockSuggestions.append(option);
-    });
-
   const chemicals = new Map();
   store.paddocks.forEach((paddock) => {
     paddock.tanks.forEach((tank) => {
@@ -716,6 +998,7 @@ function refreshSuggestions() {
 function openSaveDialog() {
   const calculation = getCalculation();
   if (!calculation.valid || !validateProductRows()) return;
+  refreshPaddockLibrary();
   refreshSuggestions();
   saveError.hidden = true;
   confirmSaveButton.disabled = false;
@@ -732,12 +1015,26 @@ function openSaveDialog() {
     activePaddocks(store.paddocks).sort(
       (left, right) => new Date(right.updatedAt) - new Date(left.updatedAt),
     )[0];
+  const defaultLibraryEntry =
+    findLibraryEntryById(paddockLibrary, editingTank?.paddockSelection?.libraryEntryId) ||
+    findLibraryEntryByName(paddockLibrary, defaultPaddock?.name || "", { includeArchived: Boolean(editingTank) });
+  const defaultSelectionId = defaultLibraryEntry?.id ||
+    (libraryInspection.status !== "ready" && defaultPaddock ? `${HISTORY_PADDOCK_PREFIX}${defaultPaddock.id}` : "") ||
+    (!activeLibraryEntries(paddockLibrary).length && !libraryMutationLocked() ? NEW_LIBRARY_ENTRY : "");
 
   saveDialogTitle.textContent = editingTank ? "Update tank record" : "Save tank record";
   confirmSaveButton.textContent = editingTank ? "Update tank" : "Save tank";
-  savePaddockName.value = defaultPaddock?.name || "";
-  savePaddockSize.value = defaultPaddock?.sizeHectares || "";
-  autoFilledSavePaddockSize = String(savePaddockSize.value);
+  populateLibrarySelect(saveLibraryPaddock, {
+    selectedId: defaultSelectionId,
+    includeHistoryFallback: true,
+  });
+  savePaddockName.value = defaultLibraryEntry ? "" : defaultPaddock?.name || "";
+  savePaddockSize.value = defaultLibraryEntry ? "" : defaultPaddock?.sizeHectares || "";
+  setNewPaddockFields(saveLibraryPaddock, saveNewPaddockFields);
+  savePaddockTotal.textContent = formatOptionalHectares(defaultLibraryEntry?.totalHectares ?? defaultPaddock?.sizeHectares);
+  savePlannedHectares.value = editingTank
+    ? editingTank.paddockSelection?.plannedHectares ?? (editingTank.sprayMethod === "Broadacre" ? editingTank.hectares : "")
+    : calculation.hectares || "";
   saveSprayDate.value = editingTank?.date || todayLocal();
   saveOperator.value = editingTank?.operator || profile.operator || "";
   saveMachine.value = MACHINES.includes(editingTank?.machine)
@@ -777,14 +1074,14 @@ function openSaveDialog() {
   });
 
   saveDialog.showModal();
-  savePaddockName.focus();
+  (saveNewPaddockFields.hidden ? saveLibraryPaddock : savePaddockName).focus();
 }
 
-function buildTankRecord(calculation, existingTank = null) {
+function buildTankRecord(calculation, existingTank = null, paddockSelection = null) {
   const sprayMethod = SPRAY_METHODS.includes(saveSprayMethod.value)
     ? saveSprayMethod.value
     : null;
-  return {
+  const record = {
     id: existingTank?.id || newId(),
     tankNumber: existingTank?.tankNumber || null,
     date: saveSprayDate.value,
@@ -804,6 +1101,8 @@ function buildTankRecord(calculation, existingTank = null) {
         calculation.sprayRate,
       )),
   };
+  if (paddockSelection) record.paddockSelection = paddockSelection;
+  return record;
 }
 
 function tankContentSignature(tank) {
@@ -816,6 +1115,7 @@ function tankContentSignature(tank) {
     machine: tank?.machine || null,
     sprayMethod: tank?.sprayMethod || null,
     recordType: tank?.recordType || "tank",
+    paddockSelection: tank?.paddockSelection || null,
     products: (tank?.products || []).map((product) => ({
       slot: product.slot,
       name: product.name,
@@ -835,17 +1135,13 @@ function saveTankRecord(event) {
   saveError.hidden = true;
 
   const calculation = getCalculation();
-  const paddockName = cleanName(savePaddockName.value);
-  const paddockSize = optionalPositiveValue(savePaddockSize);
   const selectedMachine = MACHINES.includes(saveMachine.value) ? saveMachine.value : null;
   const selectedMethod = SPRAY_METHODS.includes(saveSprayMethod.value) ? saveSprayMethod.value : null;
   const incompleteProduct = firstIncompleteProductRow(getProductRows());
 
   if (
     !calculation.valid
-    || !paddockName
     || !saveSprayDate.value
-    || Number.isNaN(paddockSize)
     || !selectedMethod
     || !allowedSprayMethods(selectedMachine).includes(selectedMethod)
     || incompleteProduct
@@ -855,9 +1151,7 @@ function saveTankRecord(event) {
       saveDialog.close();
       validateProductRows();
     } else {
-      saveError.textContent = Number.isNaN(paddockSize)
-        ? "Paddock size must be left blank or entered as a number greater than zero."
-        : !allowedSprayMethods(selectedMachine).includes(selectedMethod)
+      saveError.textContent = !allowedSprayMethods(selectedMachine).includes(selectedMethod)
           ? "Camera spray is available only for 412R and Hayes boom."
           : "Complete the paddock name, date and valid tank calculation.";
       saveError.hidden = false;
@@ -865,7 +1159,27 @@ function saveTankRecord(event) {
     return;
   }
 
-  const archivedTarget = findArchivedPaddockByName(paddockName);
+  const selection = resolveOperationalSelection({
+    select: saveLibraryPaddock,
+    plannedField: savePlannedHectares,
+    newNameField: savePaddockName,
+    newTotalField: savePaddockSize,
+    errorElement: saveError,
+    allowHistoryFallback: true,
+  });
+  if (!selection) {
+    confirmSaveButton.disabled = false;
+    return;
+  }
+  const paddockName = selection.name;
+  const paddockSize = selection.totalHectares;
+
+  let targetPaddock = selection.entry
+    ? findPaddockByLibraryEntry(selection.entry) || findPaddockByName(paddockName)
+    : findPaddockByName(paddockName);
+  const archivedTarget = targetPaddock && isArchivedPaddock(targetPaddock)
+    ? targetPaddock
+    : findArchivedPaddockByName(paddockName);
   if (archivedTarget) {
     saveError.textContent = `${archivedTarget.name} is archived. Restore it from Archived paddocks before saving another record to that name.`;
     saveError.hidden = false;
@@ -873,7 +1187,6 @@ function saveTankRecord(event) {
     return;
   }
 
-  let targetPaddock = findPaddockByName(paddockName);
   const targetWasExisting = Boolean(targetPaddock);
   const targetNameChanged = targetPaddock ? targetPaddock.name !== paddockName : false;
   const sourcePaddock = editingTankContext
@@ -909,10 +1222,18 @@ function saveTankRecord(event) {
     store.paddocks.push(targetPaddock);
   }
 
-  const tank = buildTankRecord(calculation, existingTank);
+  const paddockSelection = selection.snapshot || (
+    existingTank?.paddockSelection
+    && existingTank.paddockSelection.normalizedName === normalizeName(paddockName)
+      ? {
+          ...existingTank.paddockSelection,
+          plannedHectares: selection.plannedHectares,
+        }
+      : null
+  );
+  const tank = buildTankRecord(calculation, existingTank, paddockSelection);
   const tankChanged = !existingTank || tankContentSignature(existingTank) !== tankContentSignature(tank);
   const movedTank = Boolean(existingTank && sourcePaddock && sourcePaddock.id !== targetPaddock.id);
-  const targetSizeChanged = (targetPaddock.sizeHectares ?? null) !== paddockSize;
   let message;
 
   if (existingTank && sourcePaddock) {
@@ -938,9 +1259,8 @@ function saveTankRecord(event) {
 
   targetPaddock.name = paddockName;
   targetPaddock.normalizedName = normalizeName(paddockName);
-  targetPaddock.sizeHectares = paddockSize;
   targetPaddock.updatedAt = new Date().toISOString();
-  if (targetWasExisting && (tankChanged || movedTank || targetNameChanged || targetSizeChanged)) {
+  if (targetWasExisting && (tankChanged || movedTank || targetNameChanged)) {
     bumpContentRevision(targetPaddock);
   }
   store.lastPaddockId = targetPaddock.id;
@@ -974,18 +1294,116 @@ function saveTankRecord(event) {
   showToast(message);
 }
 
+function renderJobPaddockList(container, selections, { removable = false } = {}) {
+  if (!selections.length) {
+    container.innerHTML = '<p class="no-tanks">No paddocks selected yet.</p>';
+    return;
+  }
+  container.innerHTML = selections.map((selection) => `
+    <div class="job-paddock-row">
+      <span><strong>${escapeHtml(selection.name)}</strong><small>Saved total: ${escapeHtml(formatOptionalHectares(selection.totalHectares))} · Planned: ${escapeHtml(formatOptionalHectares(selection.plannedHectares))}</small></span>
+      ${removable ? `<button type="button" data-remove-run-selection="${escapeHtml(selection.libraryEntryId)}" aria-label="Remove ${escapeHtml(selection.name)} from this buffer">Remove</button>` : ""}
+    </div>
+  `).join("");
+}
+
+function prepareRunSelectionControl(select, fields, selections) {
+  populateLibrarySelect(select, {
+    selectedId: activeLibraryEntries(paddockLibrary).length ? "" : NEW_LIBRARY_ENTRY,
+    excludeIds: selections.map((selection) => selection.libraryEntryId),
+  });
+  if (!activeLibraryEntries(paddockLibrary).length && !libraryMutationLocked()) select.value = NEW_LIBRARY_ENTRY;
+  setNewPaddockFields(select, fields);
+}
+
+function addPendingRunSelection() {
+  runStartPaddockError.hidden = true;
+  const selection = resolveOperationalSelection({
+    select: runStartLibraryPaddock,
+    plannedField: runStartPlannedHectares,
+    newNameField: runStartNewPaddockName,
+    newTotalField: runStartNewPaddockTotal,
+    errorElement: runStartPaddockError,
+  });
+  if (!selection) return;
+  if (pendingRunSelections.some((item) => item.libraryEntryId === selection.snapshot.libraryEntryId)) {
+    runStartPaddockError.textContent = `${selection.name} is already selected for this buffer.`;
+    runStartPaddockError.hidden = false;
+    return;
+  }
+  pendingRunSelections.push(selection.snapshot);
+  renderJobPaddockList(runStartSelectedPaddocks, pendingRunSelections, { removable: true });
+  runStartPlannedHectares.value = "";
+  runStartNewPaddockName.value = "";
+  runStartNewPaddockTotal.value = "";
+  prepareRunSelectionControl(runStartLibraryPaddock, runStartNewPaddockFields, pendingRunSelections);
+}
+
+function addActiveRunSelection() {
+  const run = getActiveRun();
+  if (!run) return;
+  activeRunPaddockError.hidden = true;
+  const selection = resolveOperationalSelection({
+    select: activeRunLibraryPaddock,
+    plannedField: activeRunPlannedHectares,
+    newNameField: activeRunNewPaddockName,
+    newTotalField: activeRunNewPaddockTotal,
+    errorElement: activeRunPaddockError,
+  });
+  if (!selection) return;
+  const selectedPaddocks = run.selectedPaddocks || [];
+  if (selectedPaddocks.some((item) => item.libraryEntryId === selection.snapshot.libraryEntryId)) {
+    activeRunPaddockError.textContent = `${selection.name} is already selected for this buffer.`;
+    activeRunPaddockError.hidden = false;
+    return;
+  }
+  const updatedRun = {
+    ...run,
+    updatedAt: new Date().toISOString(),
+    selectedPaddocks: [...selectedPaddocks, selection.snapshot],
+  };
+  store.runs[store.runs.findIndex((item) => item.id === run.id)] = updatedRun;
+  const saved = persistStore();
+  activeRunPlannedHectares.value = "";
+  activeRunNewPaddockName.value = "";
+  activeRunNewPaddockTotal.value = "";
+  renderRunView();
+  if (saved) showToast(`${selection.name} added to Buffer ${run.runNumber}.`);
+}
+
+function selectedRunPaddock(run, libraryEntryId) {
+  return (run?.selectedPaddocks || []).find((selection) => selection.libraryEntryId === libraryEntryId) || null;
+}
+
+function updateRunSelectedPaddockDetails() {
+  const run = getActiveRun();
+  const selection = selectedRunPaddock(run, runPaddockName.value);
+  runPaddockSize.value = selection?.totalHectares || "";
+  runSelectedPlan.textContent = selection
+    ? `Saved total ${formatOptionalHectares(selection.totalHectares)} · planned ${formatOptionalHectares(selection.plannedHectares)} for this buffer.`
+    : "Choose a paddock selected for this buffer.";
+}
+
 function openRunStartDialog() {
   if (getActiveRun()) {
     requestTopLevelView("run");
-    showToast("A paddock run is already in progress.");
+    showToast("A buffer is already in progress.");
     return;
   }
   const calculation = getCalculation();
   if (!calculation.valid || !validateProductRows()) {
     requestTopLevelView("calculator");
-    showToast("Complete a valid tank mix before starting a run.");
+    showToast("Complete a valid tank mix before starting a buffer.");
     return;
   }
+  refreshPaddockLibrary();
+  pendingRunSelections = [];
+  renderJobPaddockList(runStartSelectedPaddocks, pendingRunSelections, { removable: true });
+  runStartPlannedHectares.value = "";
+  runStartNewPaddockName.value = "";
+  runStartNewPaddockTotal.value = "";
+  prepareRunSelectionControl(runStartLibraryPaddock, runStartNewPaddockFields, pendingRunSelections);
+  runStartPaddockError.hidden = true;
   runStartError.hidden = true;
   confirmStartRun.disabled = false;
   runDate.value = todayLocal();
@@ -1018,8 +1436,11 @@ function startPaddockRun(event) {
     || controllerStartLitres > 5000
     || !sprayMethod
     || !allowedSprayMethods(machine).includes(sprayMethod)
+    || pendingRunSelections.length === 0
   ) {
-    runStartError.textContent = controllerStartLitres > 5000
+    runStartError.textContent = pendingRunSelections.length === 0
+      ? "Add at least one paddock planned for this buffer."
+      : controllerStartLitres > 5000
       ? "Controller start cannot exceed 5,000 litres."
       : "Complete the date, controller start, machine and compatible application method.";
     runStartError.hidden = false;
@@ -1050,6 +1471,7 @@ function startPaddockRun(event) {
       sprayMethod,
       controllerStartLitres: validatedControllerStart,
       sprayRate: calculation.sprayRate,
+      selectedPaddocks: pendingRunSelections,
       products: snapshotProducts(getUsedProducts(), (product) => canonicalAmount(
         product.rate,
         product.unit,
@@ -1064,23 +1486,29 @@ function startPaddockRun(event) {
     if (run.machine) profile.lastMachine = run.machine;
     const recordsSaved = persistStore();
     if (recordsSaved && !profileWriteLocked) persistOperatorProfile();
+    pendingRunSelections = [];
     runStartDialog.close();
     requestTopLevelView("run");
     renderRunView();
-    if (recordsSaved) showToast(`Run ${run.runNumber} started. Record the first controller boundary.`);
+    if (recordsSaved) showToast(`Buffer ${run.runNumber} started. Record the first controller boundary.`);
   } catch (error) {
-    runStartError.textContent = error?.message || "The run could not be started.";
+    runStartError.textContent = error?.message || "The buffer could not be started.";
     runStartError.hidden = false;
     confirmStartRun.disabled = false;
   }
 }
 
-function ensureRunPaddock(name, sizeHectares) {
-  const archivedTarget = findArchivedPaddockByName(name);
+function ensureRunPaddock(name, sizeHectares, selection = null) {
+  const entry = selection?.libraryEntryId
+    ? findLibraryEntryById(paddockLibrary, selection.libraryEntryId)
+    : null;
+  let paddock = findPaddockByLibraryEntry(entry) || findPaddockByName(name);
+  const archivedTarget = paddock && isArchivedPaddock(paddock)
+    ? paddock
+    : findArchivedPaddockByName(name);
   if (archivedTarget) {
     throw new Error(`${archivedTarget.name} is archived. Restore it from Archived paddocks before recording another allocation to that name.`);
   }
-  let paddock = findPaddockByName(name);
   const existed = Boolean(paddock);
   if (!paddock) {
     if (activePaddocks(store.paddocks).length >= MAX_PADDOCKS) {
@@ -1104,9 +1532,6 @@ function ensureRunPaddock(name, sizeHectares) {
     };
     store.paddocks.push(paddock);
   } else {
-    if (sizeHectares !== null) paddock.sizeHectares = sizeHectares;
-    paddock.name = name;
-    paddock.normalizedName = normalizeName(name);
     bumpContentRevision(paddock);
   }
   store.lastPaddockId = paddock.id;
@@ -1143,34 +1568,32 @@ function recordRunAllocation(event) {
   const run = getActiveRun();
   if (!run) return;
   runAllocationError.hidden = true;
-  const paddockName = cleanName(runPaddockName.value);
-  const paddockSize = optionalPositiveValue(runPaddockSize);
+  const selection = selectedRunPaddock(run, runPaddockName.value);
+  const paddockName = selection?.name || "";
+  const paddockSize = selection?.totalHectares ?? null;
   const before = currentRunController(run);
   const after = Number(runControllerAfter.value);
   if (
-    !paddockName
-    || Number.isNaN(paddockSize)
+    !selection
     || runControllerAfter.value === ""
     || !Number.isFinite(after)
     || after < 0
     || after >= before
   ) {
-    runAllocationError.textContent = Number.isNaN(paddockSize)
-      ? "Paddock size must be blank or greater than zero."
-      : after === before
+    runAllocationError.textContent = after === before
         ? "The controller reading has not changed; no liquid can be allocated."
-        : "Enter a paddock and a controller-after reading below the controller-before value.";
+        : "Choose a paddock selected for this buffer and enter a controller-after reading below the controller-before value.";
     runAllocationError.hidden = false;
     return;
   }
   try {
-    const { paddock } = ensureRunPaddock(paddockName, paddockSize);
+    const { paddock } = ensureRunPaddock(paddockName, paddockSize, selection);
     const timestamp = new Date().toISOString();
     const updatedRun = addRunAllocation(run, {
       id: newId(),
       paddockId: paddock.id,
-      paddockName: paddock.name,
-      paddockSizeHectares: paddock.sizeHectares,
+      paddockName: selection.name,
+      paddockSizeHectares: selection.totalHectares,
       controllerAfterLitres: after,
       savedAt: timestamp,
     });
@@ -1178,7 +1601,7 @@ function recordRunAllocation(event) {
     const saved = persistStore();
     runPaddockName.value = "";
     runPaddockSize.value = "";
-    autoFilledRunPaddockSize = null;
+    updateRunSelectedPaddockDetails();
     runControllerAfter.value = "";
     refreshSuggestions();
     renderRunView();
@@ -1194,30 +1617,30 @@ function finishActiveRun() {
   const run = getActiveRun();
   if (!run) return;
   if (!run.allocations.length) {
-    runAllocationError.textContent = "Record at least one paddock, or cancel the empty run.";
+    runAllocationError.textContent = "Record at least one paddock, or cancel the empty buffer.";
     runAllocationError.hidden = false;
     return;
   }
-  if (!window.confirm(`Finish Run ${run.runNumber} at ${twoDecimals.format(currentRunController(run))} litres remaining?`)) return;
+  if (!window.confirm(`Finish Buffer ${run.runNumber} at ${twoDecimals.format(currentRunController(run))} litres remaining?`)) return;
   const completed = completePaddockRun(run, new Date().toISOString());
   store.runs[store.runs.findIndex((item) => item.id === run.id)] = completed;
   store.activeRunId = null;
   const saved = persistStore();
   renderRunView();
   renderPaddocks();
-  if (saved) showToast(`Run ${run.runNumber} finished with ${twoDecimals.format(completed.controllerFinalLitres)} litres remaining.`);
+  if (saved) showToast(`Buffer ${run.runNumber} finished with ${twoDecimals.format(completed.controllerFinalLitres)} litres remaining.`);
 }
 
 function cancelActiveEmptyRun() {
   const run = getActiveRun();
   if (!run || run.allocations.length) return;
-  if (!window.confirm(`Cancel empty Run ${run.runNumber}? Its cancelled audit record will be retained.`)) return;
+  if (!window.confirm(`Cancel empty Buffer ${run.runNumber}? Its cancelled audit record will be retained.`)) return;
   const cancelled = cancelEmptyPaddockRun(run, new Date().toISOString());
   store.runs[store.runs.findIndex((item) => item.id === run.id)] = cancelled;
   store.activeRunId = null;
   const saved = persistStore();
   renderRunView();
-  if (saved) showToast(`Empty Run ${run.runNumber} cancelled; its audit record was retained.`);
+  if (saved) showToast(`Empty Buffer ${run.runNumber} cancelled; its audit record was retained.`);
 }
 
 function renderRunView() {
@@ -1225,7 +1648,7 @@ function renderRunView() {
   const activeRun = getActiveRun();
   runCalculationStatus.textContent = calculation.valid
     ? `${twoDecimals.format(calculation.litres)} L at ${twoDecimals.format(calculation.sprayRate)} L/ha is ready in Calculator.`
-    : "Set up a tank mix in Calculator, then start a run.";
+    : "Set up a tank mix in Calculator, then start a buffer.";
   openRunDialogButton.disabled = !calculation.valid || Boolean(activeRun) || storageWriteLocked;
   startRunFromCalculatorButton.disabled = !calculation.valid || storageWriteLocked;
   runEmptyCard.hidden = Boolean(activeRun);
@@ -1233,7 +1656,7 @@ function renderRunView() {
   if (!activeRun) return;
   const before = currentRunController(activeRun);
   const allocated = Number(activeRun.controllerStartLitres) - before;
-  activeRunTitle.textContent = `Run ${activeRun.runNumber}`;
+  activeRunTitle.textContent = `Buffer ${activeRun.runNumber}`;
   activeRunMethod.textContent = activeRun.sprayMethod === "Camera" ? "Camera spray" : "Broadacre";
   activeRunMeta.innerHTML = `
     <span><small>Operator</small><strong>${escapeHtml(activeRun.operator || "Not set")}</strong></span>
@@ -1241,6 +1664,18 @@ function renderRunView() {
     <span><small>Started</small><strong>${twoDecimals.format(activeRun.controllerStartLitres)} L</strong></span>
     <span><small>Allocated so far</small><strong>${twoDecimals.format(allocated)} L</strong></span>
   `;
+  const selectedPaddocks = activeRun.selectedPaddocks || [];
+  renderJobPaddockList(activeRunSelectedPaddocks, selectedPaddocks);
+  prepareRunSelectionControl(activeRunLibraryPaddock, activeRunNewPaddockFields, selectedPaddocks);
+  activeRunPaddockError.hidden = true;
+  const currentAllocationSelection = runPaddockName.value;
+  runPaddockName.replaceChildren();
+  addSelectOption(runPaddockName, "", selectedPaddocks.length ? "Choose a selected paddock" : "Add a paddock to this buffer first");
+  for (const selection of selectedPaddocks) {
+    addSelectOption(runPaddockName, selection.libraryEntryId, selection.name, {
+      selected: selection.libraryEntryId === currentAllocationSelection,
+    });
+  }
   runControllerBefore.textContent = `${twoDecimals.format(before)} L`;
   runControllerAfter.max = String(before);
   runAllocationList.innerHTML = activeRun.allocations.length
@@ -1250,6 +1685,7 @@ function renderRunView() {
     : `<p class="no-tanks">No paddocks recorded yet.</p>`;
   finishRunButton.disabled = activeRun.allocations.length === 0;
   cancelEmptyRunButton.hidden = activeRun.allocations.length > 0;
+  updateRunSelectedPaddockDetails();
   updateRunAllocationPreview();
 }
 
@@ -1305,6 +1741,9 @@ function getPaddockTotals(paddock) {
 
 function renderTankRecord(paddock, tank) {
   const isRunAllocation = tank.recordType === "run-allocation";
+  const jobSelection = tank.paddockSelection || (tank.selectedPaddocks || []).find(
+    (selection) => selection.normalizedName === normalizeName(tank.paddockName || paddock.name),
+  ) || null;
   const products = tank.products.length
     ? tank.products
         .map(
@@ -1325,8 +1764,8 @@ function renderTankRecord(paddock, tank) {
     <article class="tank-record">
       <div class="tank-record-heading">
         <div>
-          <strong>${isRunAllocation ? `Run ${tank.runNumber} · Allocation ${tank.allocationNumber}` : `Tank ${tank.tankNumber}`}</strong>
-          <span>${pendingPersistence.records ? "Not saved on this device" : `${isRunAllocation && tank.runStatus === "active" ? "Active run · recorded" : "Saved"} ${escapeHtml(formatTime(tank.savedAt))}`}</span>
+          <strong>${isRunAllocation ? `Buffer ${tank.runNumber} · Allocation ${tank.allocationNumber}` : `Tank ${tank.tankNumber}`}</strong>
+          <span>${pendingPersistence.records ? "Not saved on this device" : `${isRunAllocation && tank.runStatus === "active" ? "Active buffer · recorded" : "Saved"} ${escapeHtml(formatTime(tank.savedAt))}`}</span>
         </div>
         <b>${isRunAllocation ? "Allocated" : "Tank total"}: ${twoDecimals.format(tank.tankTotal)} litres</b>
       </div>
@@ -1338,6 +1777,7 @@ function renderTankRecord(paddock, tank) {
         <span><small>Operator</small><strong>${escapeHtml(tank.operator || "Not set")}</strong></span>
         <span><small>Machine</small><strong>${escapeHtml(tank.machine || "Not set")}</strong></span>
         <span><small>Application</small><strong>${escapeHtml(tank.sprayMethod || "Needs review")}</strong></span>
+        ${jobSelection ? `<span><small>Saved total</small><strong>${escapeHtml(formatOptionalHectares(jobSelection.totalHectares))}</strong></span><span><small>Planned for job</small><strong>${escapeHtml(formatOptionalHectares(jobSelection.plannedHectares))}</strong></span>` : ""}
         ${isRunAllocation ? `<span><small>Controller</small><strong>${twoDecimals.format(tank.controllerBeforeLitres)} → ${twoDecimals.format(tank.controllerAfterLitres)} L</strong></span>` : ""}
       </div>
       <ul class="tank-products">${products}</ul>
@@ -1485,11 +1925,11 @@ function renderPaddockCard(paddock) {
           <button type="button" data-action="share-paddock" data-paddock-id="${paddock.id}" ${exportLockedByActiveRun ? "disabled" : ""}>Share / Save Copy</button>
           ${hasRunAllocation
             ? `<button class="danger-button" type="button" data-action="archive-paddock" data-paddock-id="${paddock.id}" ${exportLockedByActiveRun ? "disabled" : ""}>Archive paddock</button>`
-            : `<button class="danger-button" type="button" data-action="clear-paddock" data-paddock-id="${paddock.id}">Clear paddock</button>`}
+            : `<button class="danger-button" type="button" data-action="clear-paddock" data-paddock-id="${paddock.id}" ${exportLockedByActiveRun ? "disabled" : ""}>Clear paddock</button>`}
         </div>
-        ${exportLockedByActiveRun ? `<p class="active-run-export-note">Finish the active run before exporting, sharing or archiving this paddock.</p>` : ""}
+        ${exportLockedByActiveRun ? `<p class="active-run-export-note">Finish the active buffer before exporting, sharing, clearing or archiving this paddock.</p>` : ""}
         <details class="tank-history">
-          <summary>Tank and run records · ${records.length}</summary>
+          <summary>Tank and buffer records · ${records.length}</summary>
           ${tankGroups || `<p class="no-tanks">No tank records saved.</p>`}
         </details>
       </div>
@@ -1592,10 +2032,10 @@ function archivePaddock(paddockId) {
   const paddock = findPaddock(paddockId);
   if (!paddock || isArchivedPaddock(paddock) || !paddockHasRunAllocation(paddockId)) return;
   if (paddockHasActiveRunAllocation(paddockId)) {
-    showToast("Finish the active run before archiving this paddock.");
+    showToast("Finish the active buffer before archiving this paddock.");
     return;
   }
-  if (!window.confirm(`Archive ${paddock.name}? Its tank and controller-run audit will be retained and can be restored later.`)) return;
+  if (!window.confirm(`Archive ${paddock.name}? Its tank and buffer-allocation audit will be retained and can be restored later.`)) return;
   const archivedAt = new Date().toISOString();
   const index = store.paddocks.findIndex((record) => record.id === paddockId);
   store.paddocks[index] = transitionPaddockArchive(paddock, archivedAt, archivedAt);
@@ -1604,7 +2044,7 @@ function archivePaddock(paddockId) {
   const saved = persistStore();
   refreshSuggestions();
   renderPaddocks();
-  if (saved) showToast(`${paddock.name} archived. Its full run audit was retained.`);
+  if (saved) showToast(`${paddock.name} archived. Its full buffer audit was retained.`);
 }
 
 function restorePaddock(paddockId) {
@@ -1628,6 +2068,10 @@ function restorePaddock(paddockId) {
 function clearPaddock(paddockId) {
   const paddock = findPaddock(paddockId);
   if (!paddock) return;
+  if (paddockHasActiveRunAllocation(paddockId)) {
+    showToast("Finish the active buffer before clearing or archiving this paddock.");
+    return;
+  }
   if (paddockHasRunAllocation(paddockId)) {
     archivePaddock(paddockId);
     return;
@@ -1682,6 +2126,7 @@ function downloadUnsavedRecords() {
     storageKey: STORAGE_KEY,
     pending: { ...pendingPersistence },
     paddockRecords: store,
+    paddockLibrary,
     profile,
   };
   downloadBlob(
@@ -1696,13 +2141,26 @@ function downloadUnsavedRecords() {
 function retryPendingPersistence() {
   const retryRecords = pendingPersistence.records;
   const retryProfile = pendingPersistence.profile;
+  const retryLibrary = pendingPersistence.library;
   let saved = true;
   if (retryRecords) {
     if (!persistStore()) saved = false;
     else renderPaddocks();
   }
   if (retryProfile && !persistOperatorProfile()) saved = false;
-  if (saved && !pendingPersistence.records && !pendingPersistence.profile) {
+  if (retryLibrary) {
+    if (!persistLibrary(paddockLibrary)) saved = false;
+    else {
+      refreshSuggestions();
+      renderRunView();
+    }
+  }
+  if (
+    saved
+    && !pendingPersistence.records
+    && !pendingPersistence.profile
+    && !pendingPersistence.library
+  ) {
     showToast("Unsaved changes are now safely stored.");
   }
 }
@@ -1747,7 +2205,7 @@ function ensureShareMetadata(paddock) {
         .join("");
       return `
         <fieldset class="share-review-row" data-review-tank-id="${escapeHtml(issue.tankId)}">
-          <legend>${issue.recordType === "run-allocation" ? `Run ${escapeHtml(issue.runNumber)} · Allocation ${escapeHtml(issue.allocationNumber)}` : `Tank ${escapeHtml(issue.tankNumber)}`} · ${escapeHtml(formatDate(issue.date))}</legend>
+          <legend>${issue.recordType === "run-allocation" ? `Buffer ${escapeHtml(issue.runNumber)} · Allocation ${escapeHtml(issue.allocationNumber)}` : `Tank ${escapeHtml(issue.tankNumber)}`} · ${escapeHtml(formatDate(issue.date))}</legend>
           <label><span>Operator</span><input data-review-operator maxlength="80" autocomplete="name" value="${escapeHtml(tank?.operator || profile.operator || "")}" /></label>
           <label><span>Machine</span><select data-review-machine>${machineOptions(tank?.machine || profile.lastMachine)}</select></label>
           <label><span>Application</span><select data-review-method>${sprayMethodOptions(tank?.sprayMethod || "Broadacre")}</select></label>
@@ -1774,7 +2232,7 @@ async function exportPaddock(paddockId) {
   const paddock = findPaddock(paddockId);
   if (!paddock) return;
   if (paddockHasActiveRunAllocation(paddockId)) {
-    showToast("Finish the active run before exporting this paddock.");
+    showToast("Finish the active buffer before exporting this paddock.");
     return;
   }
   if (!(await ensureShareMetadata(paddock))) return;
@@ -1792,7 +2250,7 @@ async function exportPaddock(paddockId) {
 async function sharePaddock(paddockId) {
   const paddock = findPaddock(paddockId);
   if (paddock && paddockHasActiveRunAllocation(paddockId)) {
-    showToast("Finish the active run before sharing this paddock.");
+    showToast("Finish the active buffer before sharing this paddock.");
     return;
   }
   if (!paddock || !(await ensureShareMetadata(paddock))) return;
@@ -1888,18 +2346,19 @@ cancelEditButton.addEventListener("click", () => {
   showToast("Record editing cancelled.");
 });
 saveForm.addEventListener("submit", saveTankRecord);
-savePaddockName.addEventListener("input", () => {
-  const paddock = findPaddockByName(cleanName(savePaddockName.value));
-  if (paddock) {
-    savePaddockSize.value = paddock.sizeHectares || "";
-    autoFilledSavePaddockSize = String(savePaddockSize.value);
-  } else if (autoFilledSavePaddockSize !== null && savePaddockSize.value === autoFilledSavePaddockSize) {
-    savePaddockSize.value = "";
-    autoFilledSavePaddockSize = "";
-  }
+saveLibraryPaddock.addEventListener("change", () => {
+  setNewPaddockFields(saveLibraryPaddock, saveNewPaddockFields);
+  const entry = libraryEntryFromSelection(saveLibraryPaddock);
+  const historyPaddock = saveLibraryPaddock.value.startsWith(HISTORY_PADDOCK_PREFIX)
+    ? findPaddock(saveLibraryPaddock.value.slice(HISTORY_PADDOCK_PREFIX.length))
+    : null;
+  savePaddockTotal.textContent = formatOptionalHectares(entry?.totalHectares ?? historyPaddock?.sizeHectares);
+  if (!saveNewPaddockFields.hidden) savePaddockName.focus();
 });
 savePaddockSize.addEventListener("input", () => {
-  autoFilledSavePaddockSize = null;
+  if (saveLibraryPaddock.value === NEW_LIBRARY_ENTRY) {
+    savePaddockTotal.textContent = formatOptionalHectares(optionalPositiveValue(savePaddockSize));
+  }
 });
 saveMachine.addEventListener("change", () => {
   updateMethodOptions(saveMachine, saveSprayMethod, sprayMethodNote);
@@ -1921,23 +2380,30 @@ document.querySelector("#cancel-save").addEventListener("click", () => saveDialo
 runStartForm.addEventListener("submit", startPaddockRun);
 runMachine.addEventListener("change", () => updateMethodOptions(runMachine, runSprayMethod, runMethodNote));
 runSprayMethod.addEventListener("change", () => updateMethodOptions(runMachine, runSprayMethod, runMethodNote));
-document.querySelector("#close-run-start-dialog").addEventListener("click", () => runStartDialog.close());
-document.querySelector("#cancel-run-start").addEventListener("click", () => runStartDialog.close());
+runStartLibraryPaddock.addEventListener("change", () => setNewPaddockFields(runStartLibraryPaddock, runStartNewPaddockFields));
+runStartAddPaddock.addEventListener("click", addPendingRunSelection);
+runStartSelectedPaddocks.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-remove-run-selection]");
+  if (!button) return;
+  pendingRunSelections = pendingRunSelections.filter(
+    (selection) => selection.libraryEntryId !== button.dataset.removeRunSelection,
+  );
+  renderJobPaddockList(runStartSelectedPaddocks, pendingRunSelections, { removable: true });
+  prepareRunSelectionControl(runStartLibraryPaddock, runStartNewPaddockFields, pendingRunSelections);
+});
+document.querySelector("#close-run-start-dialog").addEventListener("click", () => {
+  pendingRunSelections = [];
+  runStartDialog.close();
+});
+document.querySelector("#cancel-run-start").addEventListener("click", () => {
+  pendingRunSelections = [];
+  runStartDialog.close();
+});
+activeRunLibraryPaddock.addEventListener("change", () => setNewPaddockFields(activeRunLibraryPaddock, activeRunNewPaddockFields));
+activeRunAddPaddock.addEventListener("click", addActiveRunSelection);
 runAllocationForm.addEventListener("submit", recordRunAllocation);
 runControllerAfter.addEventListener("input", updateRunAllocationPreview);
-runPaddockName.addEventListener("input", () => {
-  const paddock = findPaddockByName(cleanName(runPaddockName.value));
-  if (paddock) {
-    runPaddockSize.value = paddock.sizeHectares || "";
-    autoFilledRunPaddockSize = String(runPaddockSize.value);
-  } else if (autoFilledRunPaddockSize !== null && runPaddockSize.value === autoFilledRunPaddockSize) {
-    runPaddockSize.value = "";
-    autoFilledRunPaddockSize = "";
-  }
-});
-runPaddockSize.addEventListener("input", () => {
-  autoFilledRunPaddockSize = null;
-});
+runPaddockName.addEventListener("change", updateRunSelectedPaddockDetails);
 finishRunButton.addEventListener("click", finishActiveRun);
 cancelEmptyRunButton.addEventListener("click", cancelActiveEmptyRun);
 
@@ -2098,6 +2564,8 @@ host.showView = switchView;
 return {
   showView: switchView,
   renderPaddocks,
-  hasUnsavedChanges: () => pendingPersistence.records || pendingPersistence.profile,
+  refreshPaddockLibrary,
+  hasUnsavedLibraryChanges: () => pendingPersistence.library,
+  hasUnsavedChanges: () => pendingPersistence.records || pendingPersistence.profile || pendingPersistence.library,
 };
 }

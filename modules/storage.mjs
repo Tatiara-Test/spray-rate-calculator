@@ -1,3 +1,12 @@
+import {
+  PADDOCK_LIBRARY_VERSION,
+  normalizeLibraryName,
+  normalizeSelectedPaddockSnapshot,
+  seedLibraryEntries,
+} from "./paddock-library.mjs";
+
+export { PADDOCK_LIBRARY_VERSION };
+
 export const LEGACY_PADDOCKS_KEY = "pallathorpe-paddock-records-v1";
 export const LEGACY_WORK_NOTES_KEY = "pallathorpe-work-notes:v1";
 export const COMBINED_PREFIX = "tatiara-test:spray-rate-calculator:v1";
@@ -6,6 +15,7 @@ export const WORK_NOTES_KEY = `${COMBINED_PREFIX}:work-notes`;
 export const PROFILE_KEY = `${COMBINED_PREFIX}:profile`;
 export const WEATHER_SETTINGS_KEY = `${COMBINED_PREFIX}:weather-settings`;
 export const WEATHER_CACHE_KEY = `${COMBINED_PREFIX}:weather-cache`;
+export const PADDOCK_LIBRARY_KEY = `${COMBINED_PREFIX}:paddock-library`;
 export const MIGRATION_KEY = `${COMBINED_PREFIX}:migration`;
 export const LEGACY_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:paddocks`;
 export const LEGACY_WORK_NOTES_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:work-notes`;
@@ -16,7 +26,7 @@ export const PADDOCK_STORE_VERSION = 3;
 export const WORK_NOTES_VERSION = 1;
 export const PROFILE_VERSION = 1;
 export const WEATHER_SETTINGS_VERSION = 1;
-export const COMBINED_BACKUP_VERSION = 2;
+export const COMBINED_BACKUP_VERSION = 3;
 
 export const MACHINES = Object.freeze(["412R", "Hayes boom", "4830", "4023"]);
 export const SPRAY_METHODS = Object.freeze(["Broadacre", "Camera"]);
@@ -31,6 +41,14 @@ const nullablePositive = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
+};
+const validatedNullablePositive = (value, context) => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new TypeError(`${context} must be blank or greater than zero.`);
+  }
+  return number;
 };
 const nonNegativeFinite = (value, context, fallback = 0) => {
   const number = finite(value, fallback);
@@ -112,6 +130,9 @@ export function normalizePaddockStore(input) {
           baseUnit,
         };
       });
+      const paddockSelection = Object.hasOwn(tank, "paddockSelection")
+        ? normalizeSelectedPaddockSnapshot(tank.paddockSelection)
+        : null;
       return {
         ...cloneJson(tank),
         id: text(tank.id) || `migrated-tank-${paddockIndex + 1}-${tankIndex + 1}`,
@@ -127,6 +148,7 @@ export function normalizePaddockStore(input) {
         sprayMethod,
         recordType: "tank",
         products,
+        ...(Object.hasOwn(tank, "paddockSelection") ? { paddockSelection } : {}),
       };
     });
     return {
@@ -196,6 +218,21 @@ export function normalizePaddockStore(input) {
         baseUnit: product.baseUnit === "g" ? "g" : "ml",
       };
     });
+    let selectedPaddocks;
+    if (Object.hasOwn(run, "selectedPaddocks")) {
+      if (!Array.isArray(run.selectedPaddocks)) {
+        throw new TypeError(`Paddock run ${runIndex + 1} has an invalid selected paddocks list.`);
+      }
+      selectedPaddocks = run.selectedPaddocks.map(normalizeSelectedPaddockSnapshot);
+      const selectedIds = selectedPaddocks.map((selection) => selection.libraryEntryId);
+      if (new Set(selectedIds).size !== selectedIds.length) {
+        throw new TypeError(`Paddock run ${runIndex + 1} has duplicated selected paddocks.`);
+      }
+      const selectedNames = selectedPaddocks.map((selection) => selection.normalizedName);
+      if (new Set(selectedNames).size !== selectedNames.length) {
+        throw new TypeError(`Paddock run ${runIndex + 1} has duplicated selected paddock names.`);
+      }
+    }
     let controllerBefore = controllerStartLitres;
     const allocationIds = new Set();
     const allocations = run.allocations.map((allocation, allocationIndex) => {
@@ -211,6 +248,14 @@ export function normalizePaddockStore(input) {
       }
       if (controllerAfterLitres < 0 || controllerAfterLitres >= controllerBefore) {
         throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} has an invalid controller reading.`);
+      }
+      if (
+        selectedPaddocks
+        && !selectedPaddocks.some(
+          (selection) => selection.normalizedName === normalizeLibraryName(paddockName),
+        )
+      ) {
+        throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} is not selected for this buffer.`);
       }
       allocationIds.add(allocationId);
       controllerBefore = controllerAfterLitres;
@@ -258,6 +303,7 @@ export function normalizePaddockStore(input) {
       sprayRate,
       products,
       allocations,
+      ...(selectedPaddocks ? { selectedPaddocks } : {}),
     };
   });
   const activeRunId = nullableText(input.activeRunId);
@@ -321,6 +367,75 @@ function assertRequiredStoredFields(source, fields, context) {
   }
 }
 
+export function normalizePaddockLibraryData(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("Paddock Library must contain a JSON object.");
+  }
+  assertSupportedVersion(input, PADDOCK_LIBRARY_VERSION, "Paddock Library");
+  if (!Array.isArray(input.entries)) {
+    throw new TypeError("Paddock Library must contain an entries array.");
+  }
+  const ids = new Set();
+  const names = new Set();
+  const sourcePaddockIds = new Set();
+  const entries = input.entries.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new TypeError(`Paddock Library entry ${index + 1} is not valid.`);
+    }
+    const id = nullableText(entry.id);
+    const name = nullableText(entry.name);
+    if (!id || !name) {
+      throw new TypeError(`Paddock Library entry ${index + 1} is missing its id or name.`);
+    }
+    const normalizedName = normalizeLibraryName(name);
+    if (ids.has(id)) throw new TypeError(`Paddock Library id ${id} is duplicated.`);
+    if (names.has(normalizedName)) throw new TypeError(`Paddock Library name ${name} is duplicated.`);
+    ids.add(id);
+    names.add(normalizedName);
+    const createdAt = nullableText(entry.createdAt);
+    const updatedAt = nullableText(entry.updatedAt);
+    const sourcePaddockId = nullableText(entry.sourcePaddockId);
+    if (!createdAt || !updatedAt) {
+      throw new TypeError(`Paddock Library entry ${index + 1} is missing its timestamps.`);
+    }
+    if (sourcePaddockId && sourcePaddockIds.has(sourcePaddockId)) {
+      throw new TypeError(`Paddock Library source paddock ${sourcePaddockId} is duplicated.`);
+    }
+    if (sourcePaddockId) sourcePaddockIds.add(sourcePaddockId);
+    return {
+      ...cloneJson(entry),
+      id,
+      name,
+      normalizedName,
+      totalHectares: validatedNullablePositive(entry.totalHectares, `Paddock Library entry ${index + 1} total hectares`),
+      archivedAt: nullableText(entry.archivedAt),
+      createdAt,
+      updatedAt,
+      ...(Object.hasOwn(entry, "sourcePaddockId") ? { sourcePaddockId } : {}),
+    };
+  });
+  return { version: PADDOCK_LIBRARY_VERSION, entries };
+}
+
+function normalizeStoredPaddockLibrary(input) {
+  const normalized = normalizePaddockLibraryData(input);
+  assertRequiredStoredFields(input, ["version", "entries"], "Paddock Library");
+  input.entries.forEach((entry, index) => {
+    assertRequiredStoredFields(
+      entry,
+      ["id", "name", "normalizedName", "totalHectares", "archivedAt", "createdAt", "updatedAt"],
+      `Paddock Library entry ${index + 1}`,
+    );
+    assertPresentFieldsUnchanged(
+      entry,
+      normalized.entries[index],
+      ["id", "name", "normalizedName", "totalHectares", "archivedAt", "createdAt", "updatedAt", "sourcePaddockId"],
+      `Paddock Library entry ${index + 1}`,
+    );
+  });
+  return normalized;
+}
+
 function normalizeStoredPaddockStore(input) {
   const normalized = normalizePaddockStore(input);
   const sourceVersion = input.version === undefined ? 1 : input.version;
@@ -353,7 +468,7 @@ function normalizeStoredPaddockStore(input) {
         normalizedTank,
         [
           "id", "tankNumber", "date", "savedAt", "updatedAt", "tankTotal",
-          "sprayRate", "hectares", "operator", "machine", "sprayMethod", "recordType",
+          "sprayRate", "hectares", "operator", "machine", "sprayMethod", "recordType", "paddockSelection",
         ],
         `Tank ${tankIndex + 1} in ${paddockName}`,
       );
@@ -767,6 +882,70 @@ function inspectVersionedStore(storage, key, normalize) {
   }
 }
 
+export function inspectPaddockLibraryStore(storage = globalThis.localStorage) {
+  return inspectVersionedStore(storage, PADDOCK_LIBRARY_KEY, normalizeStoredPaddockLibrary);
+}
+
+export function loadPaddockLibrary(storage = globalThis.localStorage) {
+  const inspection = inspectPaddockLibraryStore(storage);
+  if (inspection.status === "absent") {
+    return { version: PADDOCK_LIBRARY_VERSION, entries: [] };
+  }
+  if (inspection.status === "ready") return inspection.value;
+  throw inspection.error;
+}
+
+export function persistPaddockLibrary(library, storage = globalThis.localStorage) {
+  const existing = inspectPaddockLibraryStore(storage);
+  if (existing.status === "corrupt" || existing.status === "future") {
+    const error = new Error("Existing Paddock Library data is protected and cannot be overwritten.");
+    error.code = "PROTECTED_EXISTING_DATA";
+    error.inspection = existing;
+    throw error;
+  }
+  writeVerified(storage, PADDOCK_LIBRARY_KEY, normalizePaddockLibraryData(library));
+}
+
+export function ensurePaddockLibrarySeeded(
+  paddockStore,
+  storage = globalThis.localStorage,
+  now = new Date(),
+  idFactory,
+) {
+  const existing = inspectPaddockLibraryStore(storage);
+  if (existing.status === "ready") {
+    return { status: "existing", value: existing.value, seededCount: 0 };
+  }
+  if (existing.status === "corrupt" || existing.status === "future") {
+    return { status: existing.status, value: null, seededCount: 0, inspection: existing };
+  }
+
+  const normalizedPaddocks = normalizePaddockStore(paddockStore);
+  const entries = seedLibraryEntries(normalizedPaddocks, now, idFactory);
+  if (!entries.length) {
+    return {
+      status: "absent",
+      value: { version: PADDOCK_LIBRARY_VERSION, entries: [] },
+      seededCount: 0,
+    };
+  }
+
+  const beforeWrite = inspectPaddockLibraryStore(storage);
+  if (beforeWrite.status === "ready") {
+    return { status: "existing", value: beforeWrite.value, seededCount: 0 };
+  }
+  if (beforeWrite.status === "corrupt" || beforeWrite.status === "future") {
+    return { status: beforeWrite.status, value: null, seededCount: 0, inspection: beforeWrite };
+  }
+
+  const value = normalizePaddockLibraryData({
+    version: PADDOCK_LIBRARY_VERSION,
+    entries,
+  });
+  persistPaddockLibrary(value, storage);
+  return { status: "seeded", value, seededCount: value.entries.length };
+}
+
 export function inspectProfileStore(storage = globalThis.localStorage) {
   return inspectVersionedStore(storage, PROFILE_KEY, normalizeProfileData);
 }
@@ -824,6 +1003,7 @@ function normalizedBackupMetadata(options, datasets) {
     origin: selectedOrigin === "null" ? null : selectedOrigin,
     datasetVersions: {
       paddocks: datasetVersion(datasets.paddocks, PADDOCK_STORE_VERSION),
+      paddockLibrary: datasetVersion(datasets.paddockLibrary, PADDOCK_LIBRARY_VERSION),
       workNotes: datasetVersion(datasets.workNotes, WORK_NOTES_VERSION),
       profile: PROFILE_VERSION,
       weatherSettings: WEATHER_SETTINGS_VERSION,
@@ -851,6 +1031,7 @@ export function combinedBackupExport(storage = globalThis.localStorage, now = ne
   };
   const datasets = {
     paddocks: parseOrNull(PADDOCKS_KEY, normalizeStoredPaddockStore),
+    paddockLibrary: parseOrNull(PADDOCK_LIBRARY_KEY, normalizeStoredPaddockLibrary),
     workNotes: parseOrNull(WORK_NOTES_KEY, (value) => {
       assertSupportedVersion(value, WORK_NOTES_VERSION, "Work Notes");
       return normalizeWorkNotesData(normalizeWorkNotes(cloneJson(value)));
@@ -875,6 +1056,12 @@ export function combinedBackupExport(storage = globalThis.localStorage, now = ne
 const PREPARED_RESTORE = Symbol("prepared-combined-backup-restore");
 const RESTORE_DATASETS = Object.freeze([
   { name: "paddocks", key: PADDOCKS_KEY, version: PADDOCK_STORE_VERSION },
+  {
+    name: "paddockLibrary",
+    key: PADDOCK_LIBRARY_KEY,
+    version: PADDOCK_LIBRARY_VERSION,
+    introducedInBackup: 3,
+  },
   { name: "workNotes", key: WORK_NOTES_KEY, version: WORK_NOTES_VERSION },
   { name: "profile", key: PROFILE_KEY, version: PROFILE_VERSION },
   { name: "weatherSettings", key: WEATHER_SETTINGS_KEY, version: WEATHER_SETTINGS_VERSION },
@@ -888,20 +1075,21 @@ function parseCombinedBackupInput(input) {
   return cloneJson(input);
 }
 
-function validateV2BackupMetadata(metadata, payload) {
+function validateBackupMetadata(metadata, payload, backupVersion) {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    throw new TypeError("Combined backup v2 is missing metadata.");
+    throw new TypeError(`Combined backup v${backupVersion} is missing metadata.`);
   }
   if (!nullableText(metadata.channel)) {
-    throw new TypeError("Combined backup v2 is missing its channel.");
+    throw new TypeError(`Combined backup v${backupVersion} is missing its channel.`);
   }
   if (metadata.origin !== null && metadata.origin !== undefined && !nullableText(metadata.origin)) {
-    throw new TypeError("Combined backup v2 has an invalid origin.");
+    throw new TypeError(`Combined backup v${backupVersion} has an invalid origin.`);
   }
   if (!metadata.datasetVersions || typeof metadata.datasetVersions !== "object" || Array.isArray(metadata.datasetVersions)) {
-    throw new TypeError("Combined backup v2 is missing dataset versions.");
+    throw new TypeError(`Combined backup v${backupVersion} is missing dataset versions.`);
   }
   for (const dataset of RESTORE_DATASETS) {
+    if (backupVersion < (dataset.introducedInBackup || 1)) continue;
     if (!Object.hasOwn(payload, dataset.name)) continue;
     const version = metadata.datasetVersions[dataset.name];
     if (!Number.isInteger(version) || version < 1) {
@@ -928,11 +1116,14 @@ export function prepareCombinedBackupRestore(input, options = {}) {
     throw new TypeError("That file is not a Pallathorpe combined backup.");
   }
   const backupVersion = assertSupportedVersion(payload, COMBINED_BACKUP_VERSION, "Combined backup");
-  if (backupVersion === COMBINED_BACKUP_VERSION) {
-    validateV2BackupMetadata(payload.metadata, payload);
+  if (backupVersion >= 2) {
+    validateBackupMetadata(payload.metadata, payload, backupVersion);
   }
   if (!Object.hasOwn(payload, "paddocks") || !Object.hasOwn(payload, "workNotes")) {
     throw new TypeError("Combined backup is missing paddocks or Work Notes.");
+  }
+  if (backupVersion >= 3 && !Object.hasOwn(payload, "paddockLibrary")) {
+    throw new TypeError("Combined backup v3 is missing its Paddock Library.");
   }
 
   const normalizeWorkNotes = options.normalizeWorkNotes ?? normalizeWorkNotesData;
@@ -943,6 +1134,7 @@ export function prepareCombinedBackupRestore(input, options = {}) {
   const datasets = {};
   const skippedLegacyNullDatasets = [];
   for (const dataset of RESTORE_DATASETS) {
+    if (backupVersion < (dataset.introducedInBackup || 1)) continue;
     if (!Object.hasOwn(payload, dataset.name)) continue;
     const value = payload[dataset.name];
     if (value === null) {
@@ -960,6 +1152,13 @@ export function prepareCombinedBackupRestore(input, options = {}) {
         });
         continue;
       }
+      if (dataset.name === "paddockLibrary") {
+        datasets.paddockLibrary = normalizePaddockLibraryData({
+          version: PADDOCK_LIBRARY_VERSION,
+          entries: [],
+        });
+        continue;
+      }
       if (dataset.name === "workNotes") {
         datasets.workNotes = normalizeWorkNotesData(normalizeWorkNotes({
           version: WORK_NOTES_VERSION,
@@ -974,6 +1173,8 @@ export function prepareCombinedBackupRestore(input, options = {}) {
     }
     if (dataset.name === "paddocks") {
       datasets.paddocks = normalizeStoredPaddockStore(value);
+    } else if (dataset.name === "paddockLibrary") {
+      datasets.paddockLibrary = normalizeStoredPaddockLibrary(value);
     } else if (dataset.name === "workNotes") {
       assertSupportedVersion(value, WORK_NOTES_VERSION, "Work Notes");
       datasets.workNotes = normalizeWorkNotesData(normalizeWorkNotes(cloneJson(value)));
@@ -991,7 +1192,7 @@ export function prepareCombinedBackupRestore(input, options = {}) {
     format: payload.format,
     backupVersion,
     generatedAt: text(payload.generatedAt) || null,
-    metadata: backupVersion === COMBINED_BACKUP_VERSION ? cloneJson(payload.metadata) : null,
+    metadata: backupVersion >= 2 ? cloneJson(payload.metadata) : null,
     datasets,
     skippedLegacyNullDatasets,
   };
@@ -1025,6 +1226,91 @@ function availableRecoveryKey(storage, restoredAt) {
     suffix += 1;
   }
   return key;
+}
+
+function inspectPreRestoreRecoveryEntry(key, raw) {
+  if (typeof raw !== "string") return null;
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.format !== "pallathorpe-combined-pre-restore-recovery" || value.version !== 1) return null;
+  if (typeof value.capturedAt !== "string") return null;
+  const captured = new Date(value.capturedAt);
+  if (Number.isNaN(captured.getTime()) || captured.toISOString() !== value.capturedAt) return null;
+  if (!value.sourceBackup || typeof value.sourceBackup !== "object" || Array.isArray(value.sourceBackup)) return null;
+  if (
+    !Number.isInteger(value.sourceBackup.version)
+    || value.sourceBackup.version < 1
+    || value.sourceBackup.version > COMBINED_BACKUP_VERSION
+  ) return null;
+  if (!value.rawByKey || typeof value.rawByKey !== "object" || Array.isArray(value.rawByKey)) return null;
+  const rawKeys = Object.keys(value.rawByKey);
+  const allowedKeys = new Set(RESTORE_DATASETS.map((dataset) => dataset.key));
+  if (
+    rawKeys.length === 0
+    || rawKeys.some((rawKey) => !allowedKeys.has(rawKey))
+    || rawKeys.some((rawKey) => value.rawByKey[rawKey] !== null && typeof value.rawByKey[rawKey] !== "string")
+  ) return null;
+
+  const token = value.capturedAt.replace(/[^0-9TZ]/g, "-");
+  const baseKey = `${PRE_RESTORE_RECOVERY_PREFIX}${token}`;
+  let collision = 1;
+  if (key !== baseKey) {
+    if (!key.startsWith(`${baseKey}-`)) return null;
+    const suffix = key.slice(baseKey.length + 1);
+    if (!/^(?:[2-9]|[1-9]\d+)$/.test(suffix)) return null;
+    collision = Number(suffix);
+    if (!Number.isSafeInteger(collision)) return null;
+  }
+  return {
+    key,
+    capturedAt: value.capturedAt,
+    capturedTime: captured.getTime(),
+    collision,
+    filename: `pallathorpe-combined-pre-restore-recovery_${key.slice(PRE_RESTORE_RECOVERY_PREFIX.length)}.json`,
+    text: raw,
+  };
+}
+
+/**
+ * Finds the latest verified pre-restore wrapper without rewriting, deleting or
+ * normalizing any recovery record. Malformed entries are left untouched.
+ */
+export function findLatestPreRestoreRecovery(storage = globalThis.localStorage) {
+  const candidates = [];
+  try {
+    if (!storage || !Number.isInteger(storage.length) || typeof storage.key !== "function") return null;
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (typeof key !== "string" || !key.startsWith(PRE_RESTORE_RECOVERY_PREFIX)) continue;
+      let raw;
+      try {
+        raw = storage.getItem(key);
+      } catch {
+        continue;
+      }
+      const candidate = inspectPreRestoreRecoveryEntry(key, raw);
+      if (candidate) candidates.push(candidate);
+    }
+  } catch {
+    return null;
+  }
+  candidates.sort((left, right) =>
+    right.capturedTime - left.capturedTime
+    || right.collision - left.collision
+    || right.key.localeCompare(left.key));
+  const latest = candidates[0];
+  if (!latest) return null;
+  return Object.freeze({
+    key: latest.key,
+    capturedAt: latest.capturedAt,
+    filename: latest.filename,
+    text: latest.text,
+  });
 }
 
 /**

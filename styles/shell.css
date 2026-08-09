@@ -36,7 +36,9 @@ button { font: inherit; }
 .test-channel-banner strong { letter-spacing: 0.03em; text-transform: uppercase; }
 .combined-panel { min-height: 100vh; }
 .weather-loading,
-.weather-isolated-error {
+.weather-isolated-error,
+.settings-loading,
+.settings-isolated-error {
   background: var(--shell-card);
   border: 1px solid var(--shell-line);
   border-radius: 14px;
@@ -45,6 +47,7 @@ button { font: inherit; }
   padding: 18px;
 }
 .weather-isolated-error p { color: var(--shell-muted); line-height: 1.45; }
+.settings-isolated-error p { color: var(--shell-muted); line-height: 1.45; }
 
 .home-panel {
   background: radial-gradient(circle at top right, rgba(242, 201, 76, 0.16), transparent 27rem), var(--shell-page);
@@ -145,7 +148,7 @@ button { font: inherit; }
 .section-navigation button span:first-child { font-size: 1.2rem; line-height: 1; }
 .section-navigation strong { font-size: 0.84rem; padding-left: 12px; text-align: right; }
 #combined-app { min-height: 100vh; }
-#spray-host, #weather-host, #work-notes-host { --combined-nav-offset: 16px; display: block; }
+#spray-host, #weather-host, #work-notes-host, #settings-host { --combined-nav-offset: 16px; display: block; }
 
 .notice,
 .update-banner {
@@ -189,7 +192,7 @@ button { font: inherit; }
 
 @media (min-width: 760px) {
   .home-panel { padding-inline: 20px; }
-  .home-card-grid { grid-template-columns: repeat(3, 1fr); }
+  .home-card-grid { grid-template-columns: repeat(2, 1fr); }
   .home-card { align-content: start; grid-template-columns: 48px 1fr; min-height: 176px; }
   .home-card b { display: none; }
 }

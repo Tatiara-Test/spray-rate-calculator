@@ -354,6 +354,68 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   margin-top: 12px;
   padding-top: 12px;
 }
+.job-paddock-picker {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  min-width: 0;
+  padding: 11px;
+}
+.job-paddock-picker legend {
+  color: var(--green);
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0 5px;
+}
+.job-paddock-controls,
+.new-library-paddock-fields,
+.job-paddock-snapshot {
+  display: grid;
+  gap: 10px;
+}
+.job-paddock-snapshot {
+  align-items: end;
+  grid-template-columns: 1fr 1fr;
+}
+.job-paddock-snapshot > span {
+  background: var(--card-muted);
+  border-radius: 10px;
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 9px 11px;
+}
+.job-paddock-snapshot small,
+.job-paddock-row small { color: var(--muted); font-size: 0.72rem; line-height: 1.35; }
+.job-paddock-help { color: var(--muted); font-size: 0.77rem; line-height: 1.4; margin: 0; }
+.job-paddock-list { display: grid; gap: 7px; min-width: 0; }
+.job-paddock-row {
+  align-items: center;
+  background: var(--card-muted);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  gap: 9px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 8px 10px;
+}
+.job-paddock-row > span { display: grid; gap: 2px; min-width: 0; }
+.job-paddock-row strong { overflow-wrap: anywhere; }
+.job-paddock-row button,
+.job-paddock-add {
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  color: var(--text);
+  font-weight: 800;
+  min-height: 44px;
+  padding: 8px 11px;
+}
+.job-paddock-add { background: var(--green); border-color: var(--green); color: #fff; width: 100%; }
+.active-run-paddocks { background: color-mix(in srgb, var(--green-soft) 35%, var(--card)); }
 .controller-grid {
   align-items: end;
   display: grid;
@@ -801,6 +863,10 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgba(35, 107, 56, 0.12);
 }
+.dialog-field input[readonly] {
+  color: var(--muted);
+  cursor: default;
+}
 .record-meta-grid {
   display: grid;
   gap: 10px;
@@ -939,6 +1005,10 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   .product-label, .product-name-field { grid-column: auto; }
   .product-result { grid-column: auto; min-height: 43px; }
   .save-grid { grid-template-columns: 1.4fr 0.8fr; }
+  .job-paddock-controls { align-items: end; grid-template-columns: minmax(0, 1.25fr) minmax(140px, 0.75fr); }
+  .job-paddock-controls .new-library-paddock-fields,
+  .job-paddock-controls .job-paddock-add { grid-column: 1 / -1; }
+  .new-library-paddock-fields { grid-template-columns: 1.4fr 0.8fr; }
 }
 @media (max-width: 390px) {
   .app-shell { padding-inline: 9px; }
@@ -956,7 +1026,9 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   }
   .save-product-row { grid-template-columns: 1fr; }
   .save-product-row > b { text-align: left; }
-  .record-meta-grid, .share-review-row, .download-actions, .run-empty-actions, .run-finish-actions { grid-template-columns: 1fr; }
+  .record-meta-grid, .share-review-row, .download-actions, .run-empty-actions, .run-finish-actions, .job-paddock-snapshot { grid-template-columns: 1fr; }
+  .job-paddock-row { align-items: stretch; flex-direction: column; }
+  .job-paddock-row button { width: 100%; }
   .controller-grid { grid-template-columns: 0.8fr 1.2fr; }
   .paddock-actions { grid-template-columns: 1fr; }
   .storage-warning { align-items: stretch; flex-direction: column; }
