@@ -1,5 +1,6 @@
 import { MACHINES, SPRAY_METHODS } from "./storage.mjs";
 import { missingProductSlots, productDisplayName } from "./product-records.mjs";
+import { loadPdfLib } from "./pdf-lib-loader.mjs";
 
 export const UNIT_LABELS = Object.freeze({
   l_ha: "L/ha",
@@ -111,9 +112,9 @@ export function buildPaddockCsv(paddock, descriptor) {
       "Saved time",
       "Tank",
       "Record type",
-      "Run",
+      "Buffer",
       "Allocation",
-      "Run status",
+      "Buffer status",
       "Operator",
       "Machine",
       "Application",
@@ -138,7 +139,7 @@ export function buildPaddockCsv(paddock, descriptor) {
         tank.date,
         tank.savedAt,
         tank.recordType === "run-allocation" ? "" : `Tank ${tank.tankNumber}`,
-        tank.recordType === "run-allocation" ? "Run allocation" : "Tank record",
+        tank.recordType === "run-allocation" ? "Buffer allocation" : "Tank record",
         tank.runNumber || "",
         tank.allocationNumber || "",
         tank.runStatus || "",
@@ -206,7 +207,7 @@ export function buildPdfContentLines(paddock, descriptor) {
   ];
   for (const tank of sortedTanks(paddock)) {
     const recordLabel = tank.recordType === "run-allocation"
-      ? `Run ${tank.runNumber}, allocation ${tank.allocationNumber} (${tank.runStatus || "status not recorded"})`
+      ? `Buffer ${tank.runNumber}, allocation ${tank.allocationNumber} (${tank.runStatus || "status not recorded"})`
       : `Tank ${tank.tankNumber}`;
     lines.push({ kind: "tank", text: `${recordLabel} | ${tank.date} | ${tank.operator || "Not set"} | ${tank.machine || "Not set"} | ${tank.sprayMethod || "Needs review"}` });
     lines.push({
@@ -236,7 +237,8 @@ export function buildPdfContentLines(paddock, descriptor) {
   return lines.map((line) => ({ ...line, text: safePdfText(line.text) }));
 }
 
-export async function buildPaddockPdf(paddock, descriptor, pdfLib = globalThis.PDFLib) {
+export async function buildPaddockPdf(paddock, descriptor, pdfLib = null) {
+  if (!pdfLib) pdfLib = await loadPdfLib();
   if (!pdfLib?.PDFDocument || !pdfLib?.StandardFonts || !pdfLib?.rgb) {
     throw new Error("The offline PDF generator is unavailable.");
   }

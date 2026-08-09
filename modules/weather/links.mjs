@@ -5,15 +5,15 @@ export const DEFAULT_WILLY_LINK = Object.freeze({
   builtIn: true,
 });
 
-export function normalizeWeatherUrl(value) {
+export function normalizeWeatherUrl(value, { allowHttp = false } = {}) {
   let parsed;
   try {
     parsed = new URL(String(value || "").trim());
   } catch {
-    throw new TypeError("Enter a complete http:// or https:// address.");
+    throw new TypeError("Enter a complete https:// address.");
   }
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new TypeError("Only http:// and https:// links are allowed.");
+  if (parsed.protocol !== "https:" && !(allowHttp && parsed.protocol === "http:")) {
+    throw new TypeError("Only secure https:// links are allowed.");
   }
   if (parsed.username || parsed.password) throw new TypeError("Links cannot contain sign-in details.");
   return parsed.href;
@@ -29,14 +29,16 @@ export function normalizeWeatherLinks(items) {
     if (!label) continue;
     let url;
     try {
-      url = normalizeWeatherUrl(item.url);
+      // Existing http:// shortcuts remain readable and recoverable. The editor
+      // uses normalizeWeatherUrl's HTTPS-only default for every new write.
+      url = normalizeWeatherUrl(item.url, { allowHttp: true });
     } catch {
       continue;
     }
     const id = String(item.id || globalThis.crypto?.randomUUID?.() || `link-${result.length + 1}`);
     if (seen.has(id)) continue;
     seen.add(id);
-    result.push({ id, label, url, builtIn: item.builtIn === true });
+    result.push({ id, label, url, builtIn: id === DEFAULT_WILLY_LINK.id });
   }
   const builtIn = result.find((item) => item.id === DEFAULT_WILLY_LINK.id);
   return builtIn ? result : [DEFAULT_WILLY_LINK, ...result];
@@ -51,3 +53,8 @@ export function moveWeatherLink(items, id, direction) {
   return links;
 }
 
+export function removeWeatherLink(items, id) {
+  const links = items.map((item) => ({ ...item }));
+  if (id === DEFAULT_WILLY_LINK.id) return links;
+  return links.filter((item) => item.id !== id);
+}

@@ -231,7 +231,7 @@ export function mountWorkNotesAi(root, options = {}) {
     const live = config.configured;
     for (const target of [badge, noteBadge, summaryBadge]) {
       target.classList.toggle("live", live);
-      target.textContent = live ? "LIVE AI · TEST" : "AI · SETUP NEEDED";
+      target.textContent = live ? "AI · TEST CONFIGURED" : "AI · SETUP NEEDED";
     }
     noteLauncherCopy.textContent = live
       ? "Audio is sent live only after Start. Review the transcript before adding it to your note."
@@ -250,8 +250,8 @@ export function mountWorkNotesAi(root, options = {}) {
       connectionTitle.textContent = "Private access needed";
       networkStatus.textContent = "Save the private test code and acknowledge the data notice before using AI.";
     } else {
-      connectionTitle.textContent = "Private test connection ready";
-      networkStatus.textContent = "Only the action you start is sent; nothing is saved automatically.";
+      connectionTitle.textContent = "Private test configured";
+      networkStatus.textContent = "Availability is checked when you start an action. Nothing is saved automatically.";
     }
   }
 

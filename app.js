@@ -36,13 +36,21 @@ if (migrationProblems.length) {
 }
 
 const sprayHost = document.querySelector("#spray-host");
-const spray = mountSprayApp(sprayHost);
+let settings = { refresh: () => {}, hasUnsavedChanges: () => false };
+const spray = mountSprayApp(sprayHost, {
+  hasExternalUnsavedLibraryChanges: () => settings.hasUnsavedChanges?.() === true,
+});
 const weatherHost = document.querySelector("#weather-host");
 let weather = { refresh: () => {}, hasUnsavedChanges: () => false };
+const settingsHost = document.querySelector("#settings-host");
 const workNotesHost = document.querySelector("#work-notes-host");
 const workNotes = mountWorkNotesApp(workNotesHost, {
   hasExternalUnsavedChanges: () =>
-    Boolean(spray.hasUnsavedChanges?.() || weather.hasUnsavedChanges?.()),
+    Boolean(
+      spray.hasUnsavedChanges?.()
+      || weather.hasUnsavedChanges?.()
+      || settings.hasUnsavedChanges?.()
+    ),
   aiConfig: {
     mode: WORK_NOTES_AI_MODE,
     backendUrl: WORK_NOTES_AI_BACKEND_URL,
@@ -52,23 +60,65 @@ const workNotes = mountWorkNotesApp(workNotesHost, {
 const navigationKey = navigationStorageKey(APP_CHANNEL);
 let navigation = loadNavigation(globalThis.localStorage, navigationKey);
 let currentRoute = { section: "home", tab: null };
-weatherHost.innerHTML = '<p class="weather-loading">Weather view loading…</p>';
-import("./modules/weather/weather-app.mjs")
-  .then(({ mountWeatherApp }) => {
-    weather = mountWeatherApp(weatherHost);
-    if (currentRoute.section === "weather") weather.refresh();
-  })
-  .catch(() => {
+let weatherMountPromise = null;
+let settingsMountPromise = null;
+
+function ensureWeatherMounted() {
+  if (weatherMountPromise) {
+    weather.refresh();
+    return weatherMountPromise;
+  }
+  weatherHost.innerHTML = '<p class="weather-loading">Weather Shortcuts loading…</p>';
+  weatherMountPromise = import("./modules/weather/weather-app.mjs")
+    .then(({ mountWeatherApp }) => {
+      weather = mountWeatherApp(weatherHost);
+      weather.refresh();
+      return weather;
+    })
+    .catch(() => {
     const failure = `
       <style>:host{display:block}.weather-isolated-error{font:16px Arial,sans-serif;background:#fff;border:1px solid #d5ddd4;border-radius:14px;color:#18231b;margin:28px auto;max-width:680px;padding:18px}.weather-isolated-error p{color:#5c685f;line-height:1.45}</style>
       <section class="weather-isolated-error">
-        <strong>Weather is unavailable</strong>
+        <strong>Weather Shortcuts are unavailable</strong>
         <p>Calculator, Paddocks and Work Notes are unaffected. Saved weather shortcuts remain in the combined backup.</p>
       </section>
     `;
     if (weatherHost.shadowRoot) weatherHost.shadowRoot.innerHTML = failure;
     else weatherHost.innerHTML = failure;
+    return weather;
   });
+  return weatherMountPromise;
+}
+
+function ensureSettingsMounted() {
+  if (settingsMountPromise) {
+    settings.refresh();
+    return settingsMountPromise;
+  }
+  settingsHost.innerHTML = '<p class="settings-loading">Settings loading…</p>';
+  settingsMountPromise = import("./modules/settings-app.mjs")
+    .then(({ mountSettingsApp }) => {
+      settings = mountSettingsApp(settingsHost, {
+        onLibraryChange: () => spray.refreshPaddockLibrary?.(),
+        hasExternalUnsavedLibraryChanges: () => spray.hasUnsavedLibraryChanges?.() === true,
+      });
+      settings.refresh();
+      return settings;
+    })
+    .catch(() => {
+      const failure = `
+        <style>:host{display:block}.settings-isolated-error{font:16px Arial,sans-serif;background:#fff;border:1px solid #d5ddd4;border-radius:14px;color:#18231b;margin:28px auto;max-width:680px;padding:18px}.settings-isolated-error p{color:#5c685f;line-height:1.45}</style>
+        <section class="settings-isolated-error">
+          <strong>Settings are unavailable</strong>
+          <p>Calculator, Paddocks, Weather Shortcuts and Work Notes are unaffected. Existing device records have not been changed.</p>
+        </section>
+      `;
+      if (settingsHost.shadowRoot) settingsHost.shadowRoot.innerHTML = failure;
+      else settingsHost.innerHTML = failure;
+      return settings;
+    });
+  return settingsMountPromise;
+}
 const panels = [...document.querySelectorAll("[data-panel]")];
 const sectionNavigation = document.querySelector("#section-navigation");
 const currentSectionTitle = document.querySelector("#current-section-title");
@@ -77,8 +127,9 @@ const continueTitle = document.querySelector("#continue-title");
 const continueDetail = document.querySelector("#continue-detail");
 const sectionTitles = {
   spray: "Spray Operations",
-  weather: "Weather",
+  weather: "Weather Shortcuts",
   "work-notes": "Work Notes",
+  settings: "Settings",
 };
 
 function updateContinueCard() {
@@ -108,7 +159,8 @@ function showRoute(route, { updateHash = false } = {}) {
 
   if (selected.section !== "home") rememberSelectedRoute(selected);
   if (selected.section === "spray") spray.showView(selected.tab);
-  if (selected.section === "weather") weather.refresh();
+  if (selected.section === "weather") ensureWeatherMounted();
+  if (selected.section === "settings") ensureSettingsMounted();
   if (selected.section === "work-notes") {
     workNotes.activateSection(selected.tab);
     workNotes.renderAll();

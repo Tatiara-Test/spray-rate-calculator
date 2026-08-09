@@ -50,12 +50,17 @@
             </button>
             <button class="home-card" type="button" data-open-section="weather">
               <span class="home-card-icon" aria-hidden="true">↗</span>
-              <span><strong>Weather</strong><small>Check local spray conditions and saved weather links.</small></span>
+              <span><strong>Weather Shortcuts</strong><small>Open your saved weather websites without a built-in forecast.</small></span>
               <b aria-hidden="true">›</b>
             </button>
             <button class="home-card" type="button" data-open-section="work-notes">
               <span class="home-card-icon" aria-hidden="true">✓</span>
               <span><strong>Work Notes</strong><small>Write daily notes, review a fortnight and manage follow-ups.</small></span>
+              <b aria-hidden="true">›</b>
+            </button>
+            <button class="home-card" type="button" data-open-section="settings">
+              <span class="home-card-icon" aria-hidden="true">&#9881;</span>
+              <span><strong>Settings</strong><small>Manage saved paddock names and total hectares.</small></span>
               <b aria-hidden="true">›</b>
             </button>
           </div>
@@ -64,15 +69,17 @@
       <section class="combined-panel" data-panel="spray" aria-label="Spray Operations" hidden>
         <div id="spray-host"></div>
       </section>
-      <section class="combined-panel" data-panel="weather" aria-label="Weather" hidden>
+      <section class="combined-panel" data-panel="weather" aria-label="Weather Shortcuts" hidden>
         <div id="weather-host"></div>
       </section>
       <section class="combined-panel" data-panel="work-notes" aria-label="Work Notes" hidden>
         <div id="work-notes-host"></div>
       </section>
+      <section class="combined-panel" data-panel="settings" aria-label="Settings" hidden>
+        <div id="settings-host"></div>
+      </section>
     </main>
 
-    <script src="./vendor/pdf-lib.min.js"></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>
