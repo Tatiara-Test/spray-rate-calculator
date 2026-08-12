@@ -58,7 +58,7 @@ export const WORK_NOTES_TEMPLATE = `
             <div class="data-actions"><button id="export-backup" class="secondary-button" type="button">Download Work Notes JSON</button><button id="choose-restore" class="quiet-button" type="button">Restore Work Notes JSON</button><input id="restore-file" type="file" accept="application/json,.json" hidden /></div>
           </section>
           <section class="data-card combined-data-card" aria-labelledby="combined-data-title">
-            <div><p class="eyebrow">Whole combined app</p><h3 id="combined-data-title">Combined backup</h3><p>Includes paddock history, the Paddock Library, Work Notes, operator settings, location and saved weather links. It never alters the original legacy storage keys.</p></div>
+            <div><p class="eyebrow">Whole combined app</p><h3 id="combined-data-title">Combined backup</h3><p>Includes paddock history, the Paddock Library, Work Notes, 4830 servicing records, operator settings, location and saved weather links. It never alters the original legacy storage keys.</p></div>
             <div class="data-actions">
               <button id="export-combined-backup" class="secondary-button" type="button">Download combined JSON</button><button id="restore-combined-backup" class="quiet-button" type="button">Restore combined JSON</button><input id="combined-restore-file" type="file" accept="application/json,.json" hidden />
               <div class="previous-state-recovery" aria-labelledby="previous-state-recovery-title">

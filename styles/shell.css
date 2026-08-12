@@ -24,13 +24,11 @@ button { font: inherit; }
   background: #f2c94c;
   color: #18231b;
   display: flex;
-  font-size: 0.78rem;
-  gap: 8px;
+  gap: 10px;
   justify-content: center;
-  line-height: 1.25;
-  padding: 7px max(10px, env(safe-area-inset-right)) 7px max(10px, env(safe-area-inset-left));
+  min-height: 38px;
+  padding: 7px 12px;
   position: relative;
-  text-align: center;
   z-index: 85;
 }
 .test-channel-banner strong { letter-spacing: 0.03em; text-transform: uppercase; }
@@ -38,7 +36,9 @@ button { font: inherit; }
 .weather-loading,
 .weather-isolated-error,
 .settings-loading,
-.settings-isolated-error {
+.settings-isolated-error,
+.servicing-loading,
+.servicing-isolated-error {
   background: var(--shell-card);
   border: 1px solid var(--shell-line);
   border-radius: 14px;
@@ -48,6 +48,7 @@ button { font: inherit; }
 }
 .weather-isolated-error p { color: var(--shell-muted); line-height: 1.45; }
 .settings-isolated-error p { color: var(--shell-muted); line-height: 1.45; }
+.servicing-isolated-error p { color: var(--shell-muted); line-height: 1.45; }
 
 .home-panel {
   background: radial-gradient(circle at top right, rgba(242, 201, 76, 0.16), transparent 27rem), var(--shell-page);
@@ -110,6 +111,7 @@ button { font: inherit; }
   justify-content: center;
   width: 48px;
 }
+.servicing-home-icon { font-size: 0.73rem; letter-spacing: -0.02em; }
 .home-card > span:nth-child(2) { display: grid; gap: 5px; }
 .home-card strong { font-size: 1rem; }
 .home-card small { color: var(--shell-muted); font-size: 0.8rem; line-height: 1.4; }
@@ -148,7 +150,7 @@ button { font: inherit; }
 .section-navigation button span:first-child { font-size: 1.2rem; line-height: 1; }
 .section-navigation strong { font-size: 0.84rem; padding-left: 12px; text-align: right; }
 #combined-app { min-height: 100vh; }
-#spray-host, #weather-host, #work-notes-host, #settings-host { --combined-nav-offset: 16px; display: block; }
+#spray-host, #weather-host, #work-notes-host, #servicing-host, #settings-host { --combined-nav-offset: 16px; display: block; }
 
 .notice,
 .update-banner {

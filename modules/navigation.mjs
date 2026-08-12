@@ -69,6 +69,7 @@ export function normalizeRoute(route, navigation = DEFAULT_NAVIGATION) {
     return { section, tab };
   }
   if (section === "weather") return { section: "weather", tab: null };
+  if (section === "servicing") return { section: "servicing", tab: null };
   if (section === "settings") return { section: "settings", tab: null };
   return { section: "home", tab: null };
 }
@@ -94,6 +95,7 @@ export function routeFromHash(hash, navigation = DEFAULT_NAVIGATION) {
     return normalizeRoute({ section: "spray", tab: token.slice(6) }, navigation);
   }
   if (token === "weather") return { section: "weather", tab: null };
+  if (token === "servicing") return { section: "servicing", tab: null };
   if (token === "settings") return { section: "settings", tab: null };
   if (token === "work-notes") return normalizeRoute({ section: "work-notes" }, navigation);
   if (token.startsWith("work-notes/")) {
@@ -106,6 +108,7 @@ export function hashForRoute(route) {
   const selected = normalizeRoute(route);
   if (selected.section === "home") return "#/home";
   if (selected.section === "weather") return "#/weather";
+  if (selected.section === "servicing") return "#/servicing";
   if (selected.section === "settings") return "#/settings";
   return `#/${selected.section}/${selected.tab}`;
 }
@@ -121,6 +124,9 @@ export function continueCopy(route) {
   }
   if (selected.section === "settings") {
     return { title: "Continue Settings", detail: "Paddock Library" };
+  }
+  if (selected.section === "servicing") {
+    return { title: "Continue 4830 Servicing", detail: "Service records" };
   }
   const labels = { calculator: "Calculator", run: "Buffers", paddocks: "Paddocks" };
   return { title: "Continue Spray Operations", detail: labels[selected.tab] };

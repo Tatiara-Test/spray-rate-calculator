@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-";
 const LEGACY_CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-legacy-";
-const CACHE_NAME = `${CACHE_PREFIX}v15-2026-08-12-servicing-compatibility`;
+const CACHE_NAME = `${CACHE_PREFIX}v18-2026-08-12-4830-servicing-lifecycle-guard`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -10,25 +10,33 @@ const APP_SHELL = [
   "./brand-mark.png",
   "./robots.txt",
   "./styles/shell.css",
-  "./styles/settings.css",
   "./styles/spray.css",
+  "./styles/settings.css",
+  "./styles/servicing.css",
   "./styles/weather.css",
   "./styles/work-notes.css",
   "./modules/storage.mjs",
-  "./modules/servicing-compatibility.mjs",
   "./modules/navigation.mjs",
-  "./modules/paddock-library.mjs",
   "./modules/product-records.mjs",
   "./modules/paddock-balance.mjs",
   "./modules/paddock-lifecycle.mjs",
+  "./modules/paddock-library.mjs",
   "./modules/paddock-export.mjs",
   "./modules/paddock-runs.mjs",
   "./modules/pdf-lib-loader.mjs",
   "./modules/share-files.mjs",
-  "./modules/settings-app.mjs",
-  "./modules/settings-template.mjs",
   "./modules/spray-template.mjs",
   "./modules/spray-app.mjs",
+  "./modules/settings-template.mjs",
+  "./modules/settings-app.mjs",
+  "./modules/servicing/4830-service-definition.mjs",
+  "./modules/servicing/servicing-records.mjs",
+  "./modules/servicing/servicing-store.mjs",
+  "./modules/servicing/servicing-layout-4830.mjs",
+  "./modules/servicing/servicing-export.mjs",
+  "./modules/servicing/servicing-template.mjs",
+  "./modules/servicing/servicing-app.mjs",
+  "./modules/servicing/servicing-adapter.mjs",
   "./modules/work-notes-ai-demo.mjs",
   "./modules/work-notes-ai-client.mjs",
   "./modules/work-notes-ai.mjs",
@@ -45,7 +53,6 @@ const APP_SHELL = [
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
 });
-
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
@@ -60,7 +67,6 @@ self.addEventListener("activate", (event) => {
       .then(() => self.clients.claim()),
   );
 });
-
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
