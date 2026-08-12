@@ -4,6 +4,11 @@ import {
   normalizeSelectedPaddockSnapshot,
   seedLibraryEntries,
 } from "./paddock-library.mjs";
+import {
+  assertLegacyCombinedDataOperationAllowed,
+  installServicingCompatibility as installServicingCompatibilityForPrefix,
+  servicingCompatibilityKeys,
+} from "./servicing-compatibility.mjs";
 
 export { PADDOCK_LIBRARY_VERSION };
 
@@ -21,12 +26,17 @@ export const LEGACY_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:padd
 export const LEGACY_WORK_NOTES_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:work-notes`;
 export const PRE_V3_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:pre-v3-backup:paddocks`;
 export const PRE_RESTORE_RECOVERY_PREFIX = `${COMBINED_PREFIX}:recovery:pre-restore:`;
+export const SERVICING_COMPATIBILITY_KEYS = servicingCompatibilityKeys(COMBINED_PREFIX);
 
 export const PADDOCK_STORE_VERSION = 3;
 export const WORK_NOTES_VERSION = 1;
 export const PROFILE_VERSION = 1;
 export const WEATHER_SETTINGS_VERSION = 1;
 export const COMBINED_BACKUP_VERSION = 3;
+
+export function installServicingCompatibility(storage = globalThis.localStorage, now = new Date()) {
+  return installServicingCompatibilityForPrefix(storage, COMBINED_PREFIX, now);
+}
 
 export const MACHINES = Object.freeze(["412R", "Hayes boom", "4830", "4023"]);
 export const SPRAY_METHODS = Object.freeze(["Broadacre", "Camera"]);
@@ -1012,6 +1022,7 @@ function normalizedBackupMetadata(options, datasets) {
 }
 
 export function combinedBackupExport(storage = globalThis.localStorage, now = new Date(), options = {}) {
+  assertLegacyCombinedDataOperationAllowed(storage, COMBINED_PREFIX, "create a complete backup of");
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const normalizeWorkNotes = options.normalizeWorkNotes ?? normalizeWorkNotesData;
   if (typeof normalizeWorkNotes !== "function") {
@@ -1111,6 +1122,11 @@ function validateBackupMetadata(metadata, payload, backupVersion) {
  * when this API is called from the integrated application.
  */
 export function prepareCombinedBackupRestore(input, options = {}) {
+  assertLegacyCombinedDataOperationAllowed(
+    options.storage ?? globalThis.localStorage,
+    COMBINED_PREFIX,
+    "prepare a complete restore of",
+  );
   const payload = parseCombinedBackupInput(input);
   if (payload.format !== "pallathorpe-combined-backup") {
     throw new TypeError("That file is not a Pallathorpe combined backup.");
@@ -1323,6 +1339,7 @@ export function restoreCombinedBackup(
   storage = globalThis.localStorage,
   now = new Date(),
 ) {
+  assertLegacyCombinedDataOperationAllowed(storage, COMBINED_PREFIX, "restore");
   if (!prepared || prepared[PREPARED_RESTORE] !== true) {
     throw new TypeError("Prepare and validate the combined backup before restoring it.");
   }

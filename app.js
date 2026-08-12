@@ -1,5 +1,5 @@
 import { mountSprayApp } from "./modules/spray-app.mjs";
-import { migrateLegacyData } from "./modules/storage.mjs";
+import { installServicingCompatibility, migrateLegacyData } from "./modules/storage.mjs";
 import { mountWorkNotesApp } from "./modules/work-notes-app.mjs";
 import {
   APP_CHANNEL,
@@ -18,6 +18,13 @@ import {
   routeFromHash,
 } from "./modules/navigation.mjs";
 
+let compatibilityProblem = null;
+try {
+  installServicingCompatibility();
+} catch (error) {
+  compatibilityProblem = error;
+}
+
 let migration = {};
 if (ENABLE_LEGACY_MIGRATION) {
   try {
@@ -30,7 +37,10 @@ const migrationNotice = document.querySelector("#migration-notice");
 const migrationProblems = Object.entries(migration).filter(([, result]) =>
   ["invalid", "error"].includes(result.status),
 );
-if (migrationProblems.length) {
+if (compatibilityProblem) {
+  migrationNotice.textContent = "This update could not prepare safe future servicing backups. Existing app functions still work, but do not enable Servicing until device storage is available.";
+  migrationNotice.hidden = false;
+} else if (migrationProblems.length) {
   migrationNotice.textContent = "Some older device records could not be copied. The originals were left unchanged; use Backup / Restore to review them.";
   migrationNotice.hidden = false;
 }

@@ -8,4 +8,4 @@ Weather is shortcuts-only in this TEST channel. Open-Meteo and other forecast pr
 
 Work Notes is connected to the dedicated Tatiara Test AI Worker at `https://tatiara-work-ai-test.leximenexi.workers.dev`. The public release contains no OpenAI key or private access code. The access code is entered on the test phone, stored only in channel-scoped browser storage, excluded from app backups, and can be forgotten independently. The Worker retains a separate runtime kill switch so AI requests can be disabled without affecting manual Work Notes.
 
-The prepared release uses the `v14-2026-08-09-audit-repair` cache generation and would reach installed test copies only through the app's explicit **Update now** flow after separate publication approval.
+The prepared compatibility release uses the `v15-2026-08-12-servicing-compatibility` cache generation and would reach installed test copies only through the app's explicit **Update now** flow after separate publication approval. It contains no Servicing screen or servicing-record writer.
