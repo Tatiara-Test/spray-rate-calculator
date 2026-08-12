@@ -5,16 +5,35 @@ import {
   seedLibraryEntries,
 } from "./paddock-library.mjs";
 import {
-  assertLegacyCombinedDataOperationAllowed,
-  installServicingCompatibility as installServicingCompatibilityForPrefix,
-  servicingCompatibilityKeys,
-} from "./servicing-compatibility.mjs";
+  SERVICING_STORE_VERSION,
+  appendFinalisedServicingRecord,
+  assertCompleteCombinedBackupAllowed as assertCompleteCombinedBackupAllowedForKeys,
+  assertServicingWritesEnabled as assertServicingWritesEnabledForKeys,
+  emptyServicingStore,
+  inspectServicingCompatibility as inspectServicingCompatibilityForKeys,
+  inspectServicingStore as inspectServicingStoreForKeys,
+  loadServicingStore as loadServicingStoreForKeys,
+  normalizeServicingStore,
+  persistServicingStore as persistServicingStoreForKeys,
+  servicingStorageKeys,
+  upsertServicingDraft,
+} from "./servicing/servicing-store.mjs";
 
 export { PADDOCK_LIBRARY_VERSION };
+export {
+  SERVICING_STORE_VERSION,
+  appendFinalisedServicingRecord,
+  emptyServicingStore,
+  normalizeServicingStore,
+  upsertServicingDraft,
+};
 
 export const LEGACY_PADDOCKS_KEY = "pallathorpe-paddock-records-v1";
 export const LEGACY_WORK_NOTES_KEY = "pallathorpe-work-notes:v1";
 export const COMBINED_PREFIX = "tatiara-test:spray-rate-calculator:v1";
+export const SERVICING_STORAGE_KEYS = servicingStorageKeys(COMBINED_PREFIX);
+export const SERVICING_KEY = SERVICING_STORAGE_KEYS.records;
+export const SERVICING_COMPATIBILITY_KEY = SERVICING_STORAGE_KEYS.compatibility;
 export const PADDOCKS_KEY = `${COMBINED_PREFIX}:paddocks`;
 export const WORK_NOTES_KEY = `${COMBINED_PREFIX}:work-notes`;
 export const PROFILE_KEY = `${COMBINED_PREFIX}:profile`;
@@ -26,16 +45,35 @@ export const LEGACY_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:padd
 export const LEGACY_WORK_NOTES_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:work-notes`;
 export const PRE_V3_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:pre-v3-backup:paddocks`;
 export const PRE_RESTORE_RECOVERY_PREFIX = `${COMBINED_PREFIX}:recovery:pre-restore:`;
-export const SERVICING_COMPATIBILITY_KEYS = servicingCompatibilityKeys(COMBINED_PREFIX);
 
 export const PADDOCK_STORE_VERSION = 3;
 export const WORK_NOTES_VERSION = 1;
 export const PROFILE_VERSION = 1;
 export const WEATHER_SETTINGS_VERSION = 1;
-export const COMBINED_BACKUP_VERSION = 3;
+export const COMBINED_BACKUP_VERSION = 4;
 
-export function installServicingCompatibility(storage = globalThis.localStorage, now = new Date()) {
-  return installServicingCompatibilityForPrefix(storage, COMBINED_PREFIX, now);
+export function inspectServicingStore(storage = globalThis.localStorage) {
+  return inspectServicingStoreForKeys(storage, SERVICING_STORAGE_KEYS);
+}
+
+export function loadServicingStore(storage = globalThis.localStorage) {
+  return loadServicingStoreForKeys(storage, SERVICING_STORAGE_KEYS);
+}
+
+export function inspectServicingCompatibility(storage = globalThis.localStorage) {
+  return inspectServicingCompatibilityForKeys(storage, SERVICING_STORAGE_KEYS);
+}
+
+export function assertServicingWritesEnabled(storage = globalThis.localStorage) {
+  return assertServicingWritesEnabledForKeys(storage, SERVICING_STORAGE_KEYS);
+}
+
+export function assertCompleteCombinedBackupAllowed(storage, clientBackupVersion) {
+  return assertCompleteCombinedBackupAllowedForKeys(storage, clientBackupVersion, SERVICING_STORAGE_KEYS);
+}
+
+export function persistServicingStore(store, storage = globalThis.localStorage, options = {}) {
+  return persistServicingStoreForKeys(store, storage, { ...options, keys: SERVICING_STORAGE_KEYS });
 }
 
 export const MACHINES = Object.freeze(["412R", "Hayes boom", "4830", "4023"]);
@@ -1017,12 +1055,13 @@ function normalizedBackupMetadata(options, datasets) {
       workNotes: datasetVersion(datasets.workNotes, WORK_NOTES_VERSION),
       profile: PROFILE_VERSION,
       weatherSettings: WEATHER_SETTINGS_VERSION,
+      servicing4830: datasetVersion(datasets.servicing4830, SERVICING_STORE_VERSION),
     },
   };
 }
 
 export function combinedBackupExport(storage = globalThis.localStorage, now = new Date(), options = {}) {
-  assertLegacyCombinedDataOperationAllowed(storage, COMBINED_PREFIX, "create a complete backup of");
+  assertCompleteCombinedBackupAllowed(storage, COMBINED_BACKUP_VERSION);
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const normalizeWorkNotes = options.normalizeWorkNotes ?? normalizeWorkNotesData;
   if (typeof normalizeWorkNotes !== "function") {
@@ -1049,6 +1088,7 @@ export function combinedBackupExport(storage = globalThis.localStorage, now = ne
     }),
     profile: parseOrNull(PROFILE_KEY, normalizeProfileData),
     weatherSettings: parseOrNull(WEATHER_SETTINGS_KEY, normalizeWeatherSettingsData),
+    servicing4830: parseOrNull(SERVICING_KEY, normalizeServicingStore),
   };
   const payload = {
     format: "pallathorpe-combined-backup",
@@ -1076,6 +1116,12 @@ const RESTORE_DATASETS = Object.freeze([
   { name: "workNotes", key: WORK_NOTES_KEY, version: WORK_NOTES_VERSION },
   { name: "profile", key: PROFILE_KEY, version: PROFILE_VERSION },
   { name: "weatherSettings", key: WEATHER_SETTINGS_KEY, version: WEATHER_SETTINGS_VERSION },
+  {
+    name: "servicing4830",
+    key: SERVICING_KEY,
+    version: SERVICING_STORE_VERSION,
+    introducedInBackup: 4,
+  },
 ]);
 
 function parseCombinedBackupInput(input) {
@@ -1122,11 +1168,6 @@ function validateBackupMetadata(metadata, payload, backupVersion) {
  * when this API is called from the integrated application.
  */
 export function prepareCombinedBackupRestore(input, options = {}) {
-  assertLegacyCombinedDataOperationAllowed(
-    options.storage ?? globalThis.localStorage,
-    COMBINED_PREFIX,
-    "prepare a complete restore of",
-  );
   const payload = parseCombinedBackupInput(input);
   if (payload.format !== "pallathorpe-combined-backup") {
     throw new TypeError("That file is not a Pallathorpe combined backup.");
@@ -1140,6 +1181,9 @@ export function prepareCombinedBackupRestore(input, options = {}) {
   }
   if (backupVersion >= 3 && !Object.hasOwn(payload, "paddockLibrary")) {
     throw new TypeError("Combined backup v3 is missing its Paddock Library.");
+  }
+  if (backupVersion >= 4 && !Object.hasOwn(payload, "servicing4830")) {
+    throw new TypeError("Combined backup v4 is missing its 4830 Servicing dataset.");
   }
 
   const normalizeWorkNotes = options.normalizeWorkNotes ?? normalizeWorkNotesData;
@@ -1184,6 +1228,10 @@ export function prepareCombinedBackupRestore(input, options = {}) {
         }));
         continue;
       }
+      if (dataset.name === "servicing4830") {
+        datasets.servicing4830 = emptyServicingStore();
+        continue;
+      }
       datasets[dataset.name] = null;
       continue;
     }
@@ -1196,6 +1244,8 @@ export function prepareCombinedBackupRestore(input, options = {}) {
       datasets.workNotes = normalizeWorkNotesData(normalizeWorkNotes(cloneJson(value)));
     } else if (dataset.name === "profile") {
       datasets.profile = normalizeProfileData(value);
+    } else if (dataset.name === "servicing4830") {
+      datasets.servicing4830 = normalizeServicingStore(value);
     } else {
       datasets.weatherSettings = normalizeWeatherSettingsData(value);
     }
@@ -1339,12 +1389,12 @@ export function restoreCombinedBackup(
   storage = globalThis.localStorage,
   now = new Date(),
 ) {
-  assertLegacyCombinedDataOperationAllowed(storage, COMBINED_PREFIX, "restore");
   if (!prepared || prepared[PREPARED_RESTORE] !== true) {
     throw new TypeError("Prepare and validate the combined backup before restoring it.");
   }
   const restoredAt = restoreTimestamp(now);
   const targets = RESTORE_DATASETS.filter((dataset) => Object.hasOwn(prepared.datasets, dataset.name));
+  if (targets.some(({ name }) => name === "servicing4830")) assertServicingWritesEnabled(storage);
   const previousRaw = Object.fromEntries(targets.map(({ key }) => [key, storage.getItem(key)]));
   const nextRaw = Object.fromEntries(targets.map(({ name, key }) => [
     key,

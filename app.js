@@ -1,5 +1,5 @@
 import { mountSprayApp } from "./modules/spray-app.mjs";
-import { installServicingCompatibility, migrateLegacyData } from "./modules/storage.mjs";
+import { migrateLegacyData } from "./modules/storage.mjs";
 import { mountWorkNotesApp } from "./modules/work-notes-app.mjs";
 import {
   APP_CHANNEL,
@@ -18,13 +18,6 @@ import {
   routeFromHash,
 } from "./modules/navigation.mjs";
 
-let compatibilityProblem = null;
-try {
-  installServicingCompatibility();
-} catch (error) {
-  compatibilityProblem = error;
-}
-
 let migration = {};
 if (ENABLE_LEGACY_MIGRATION) {
   try {
@@ -37,10 +30,7 @@ const migrationNotice = document.querySelector("#migration-notice");
 const migrationProblems = Object.entries(migration).filter(([, result]) =>
   ["invalid", "error"].includes(result.status),
 );
-if (compatibilityProblem) {
-  migrationNotice.textContent = "This update could not prepare safe future servicing backups. Existing app functions still work, but do not enable Servicing until device storage is available.";
-  migrationNotice.hidden = false;
-} else if (migrationProblems.length) {
+if (migrationProblems.length) {
   migrationNotice.textContent = "Some older device records could not be copied. The originals were left unchanged; use Backup / Restore to review them.";
   migrationNotice.hidden = false;
 }
@@ -53,6 +43,8 @@ const spray = mountSprayApp(sprayHost, {
 const weatherHost = document.querySelector("#weather-host");
 let weather = { refresh: () => {}, hasUnsavedChanges: () => false };
 const settingsHost = document.querySelector("#settings-host");
+const servicingHost = document.querySelector("#servicing-host");
+let servicing = { refresh: () => {}, hasUnsavedChanges: () => false };
 const workNotesHost = document.querySelector("#work-notes-host");
 const workNotes = mountWorkNotesApp(workNotesHost, {
   hasExternalUnsavedChanges: () =>
@@ -60,6 +52,7 @@ const workNotes = mountWorkNotesApp(workNotesHost, {
       spray.hasUnsavedChanges?.()
       || weather.hasUnsavedChanges?.()
       || settings.hasUnsavedChanges?.()
+      || servicing.hasUnsavedChanges?.()
     ),
   aiConfig: {
     mode: WORK_NOTES_AI_MODE,
@@ -72,6 +65,7 @@ let navigation = loadNavigation(globalThis.localStorage, navigationKey);
 let currentRoute = { section: "home", tab: null };
 let weatherMountPromise = null;
 let settingsMountPromise = null;
+let servicingMountPromise = null;
 
 function ensureWeatherMounted() {
   if (weatherMountPromise) {
@@ -129,6 +123,37 @@ function ensureSettingsMounted() {
     });
   return settingsMountPromise;
 }
+
+function ensureServicingMounted() {
+  if (servicingMountPromise) {
+    servicing.refresh();
+    return servicingMountPromise;
+  }
+  servicingHost.innerHTML = '<p class="servicing-loading">4830 Servicing loading…</p>';
+  servicingMountPromise = Promise.all([
+    import("./modules/servicing/servicing-app.mjs"),
+    import("./modules/servicing/servicing-adapter.mjs"),
+  ])
+    .then(([{ mountServicingApp }, { createServicingAdapter }]) => {
+      const adapter = createServicingAdapter();
+      servicing = mountServicingApp(servicingHost, { adapter });
+      servicing.refresh();
+      return servicing;
+    })
+    .catch(() => {
+      const failure = `
+        <style>:host{display:block}.servicing-isolated-error{font:16px Arial,sans-serif;background:#fff;border:1px solid #d5ddd4;border-radius:14px;color:#18231b;margin:28px auto;max-width:680px;padding:18px}.servicing-isolated-error p{color:#5c685f;line-height:1.45}</style>
+        <section class="servicing-isolated-error">
+          <strong>4830 Servicing is unavailable</strong>
+          <p>No service draft was created or changed. Calculator, Paddocks, Buffers and Work Notes are unaffected.</p>
+        </section>
+      `;
+      if (servicingHost.shadowRoot) servicingHost.shadowRoot.innerHTML = failure;
+      else servicingHost.innerHTML = failure;
+      return servicing;
+    });
+  return servicingMountPromise;
+}
 const panels = [...document.querySelectorAll("[data-panel]")];
 const sectionNavigation = document.querySelector("#section-navigation");
 const currentSectionTitle = document.querySelector("#current-section-title");
@@ -139,6 +164,7 @@ const sectionTitles = {
   spray: "Spray Operations",
   weather: "Weather Shortcuts",
   "work-notes": "Work Notes",
+  servicing: "4830 Servicing",
   settings: "Settings",
 };
 
@@ -171,6 +197,7 @@ function showRoute(route, { updateHash = false } = {}) {
   if (selected.section === "spray") spray.showView(selected.tab);
   if (selected.section === "weather") ensureWeatherMounted();
   if (selected.section === "settings") ensureSettingsMounted();
+  if (selected.section === "servicing") ensureServicingMounted();
   if (selected.section === "work-notes") {
     workNotes.activateSection(selected.tab);
     workNotes.renderAll();

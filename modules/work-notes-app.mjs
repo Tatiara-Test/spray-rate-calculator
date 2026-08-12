@@ -984,7 +984,7 @@ $("#export-backup").addEventListener("click", () => {
 $("#export-combined-backup").addEventListener("click", () => {
   if (storageLock || combinedDataHasUnsavedChanges()) {
     showToast(
-      "Combined backup is unavailable while Spray, Weather, Settings or Work Notes has unsaved changes. Use that section’s recovery controls first.",
+      "Combined backup is unavailable while Spray, Weather, Settings, Servicing or Work Notes has unsaved changes. Use that section’s recovery controls first.",
       true,
     );
     return;
@@ -1043,10 +1043,14 @@ $("#combined-restore-file").addEventListener("change", async (event) => {
     const hasPaddocks = Object.hasOwn(prepared.datasets, "paddocks");
     const hasPaddockLibrary = Object.hasOwn(prepared.datasets, "paddockLibrary");
     const hasWorkNotes = Object.hasOwn(prepared.datasets, "workNotes");
+    const hasServicing = Object.hasOwn(prepared.datasets, "servicing4830");
     const paddockCount = prepared.datasets.paddocks?.paddocks?.length ?? 0;
     const libraryCount = prepared.datasets.paddockLibrary?.entries?.length ?? 0;
     const noteCount = Object.keys(prepared.datasets.workNotes?.notes ?? {}).length;
     const followUpCount = prepared.datasets.workNotes?.followUps?.length ?? 0;
+    const servicingDraftCount = prepared.datasets.servicing4830?.drafts?.length ?? 0;
+    const servicingRecordCount = (prepared.datasets.servicing4830?.recordSeries ?? [])
+      .reduce((count, series) => count + (series.revisions?.length ?? 0), 0);
     const paddockSummary = hasPaddocks ? `${paddockCount} paddocks` : "current paddocks unchanged";
     const librarySummary = hasPaddockLibrary
       ? `${libraryCount} Paddock Library entries`
@@ -1054,6 +1058,9 @@ $("#combined-restore-file").addEventListener("change", async (event) => {
     const workNotesSummary = hasWorkNotes
       ? `${noteCount} Work Notes and ${followUpCount} follow-ups`
       : "current Work Notes unchanged";
+    const servicingSummary = hasServicing
+      ? `${servicingDraftCount} servicing drafts and ${servicingRecordCount} finalised servicing revisions`
+      : "current 4830 servicing records unchanged";
     const sourceWarnings = [];
     if (prepared.metadata?.channel && prepared.metadata.channel !== APP_CHANNEL) {
       sourceWarnings.push(
@@ -1078,12 +1085,13 @@ $("#combined-restore-file").addEventListener("change", async (event) => {
       profile: "operator profile",
       weatherSettings: "Weather settings",
       paddockLibrary: "Paddock Library",
+      servicing4830: "4830 servicing records",
     })[name] || name);
     const skippedLegacyWarning = skippedLegacyLabels.length
       ? `\n\nThis older backup contains ambiguous empty data for ${skippedLegacyLabels.join(", ")}. Those datasets will be skipped and their current device records left unchanged.`
       : "";
     const confirmed = window.confirm(
-      `Apply this combined backup: ${paddockSummary}; ${librarySummary}; ${workNotesSummary}? Operator profile and Weather settings are also replaced when included. A zero count clears that included section. A verified recovery snapshot is saved first, and the original legacy keys are never changed.${skippedLegacyWarning}${sourceWarning}`,
+      `Apply this combined backup: ${paddockSummary}; ${librarySummary}; ${workNotesSummary}; ${servicingSummary}? Operator profile and Weather settings are also replaced when included. A zero count clears that included section. A verified recovery snapshot is saved first, and the original legacy keys are never changed.${skippedLegacyWarning}${sourceWarning}`,
     );
     if (!confirmed) return;
 
