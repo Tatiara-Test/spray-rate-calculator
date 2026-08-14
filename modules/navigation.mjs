@@ -119,7 +119,7 @@ export function continueCopy(route) {
     return { title: "Continue Weather Shortcuts", detail: "Return to your saved weather links" };
   }
   if (selected.section === "work-notes") {
-    const labels = { notes: "Notes", summary: "Summary", followups: "Follow-ups" };
+    const labels = { notes: "Notes", summary: "Summary", followups: "To-do list" };
     return { title: "Continue Work Notes", detail: labels[selected.tab] };
   }
   if (selected.section === "settings") {

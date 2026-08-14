@@ -98,7 +98,7 @@ function assertTaskResult(result, expectedTaskId) {
   if (!TASK_STATES.includes(result.state)) throw new TypeError(`Servicing result for ${expectedTaskId} has an invalid state.`);
   if (result.reason !== null && typeof result.reason !== "string") throw new TypeError(`Servicing result for ${expectedTaskId} has an invalid reason.`);
   if (typeof result.note !== "string" || typeof result.followUpRequired !== "boolean" || typeof result.followUpNote !== "string") {
-    throw new TypeError(`Servicing result for ${expectedTaskId} has invalid notes or follow-up state.`);
+    throw new TypeError(`Servicing result for ${expectedTaskId} has invalid notes or to-do state.`);
   }
   isoTimestamp(result.updatedAt, `Servicing result ${expectedTaskId} update time`);
   const reason = result.reason === null ? "" : text(result.reason);
@@ -111,13 +111,13 @@ function assertTaskResult(result, expectedTaskId) {
     throw new TypeError(`Task ${expectedTaskId} cannot carry an exception reason in state ${result.state}.`);
   }
   if (result.state === "not_started" && result.followUpRequired) {
-    throw new TypeError(`Not-started task ${expectedTaskId} cannot be marked for follow-up.`);
+    throw new TypeError(`Not-started task ${expectedTaskId} cannot be marked as a to-do.`);
   }
-  if (result.followUpRequired && !followUpNote) throw new TypeError(`Follow-up task ${expectedTaskId} requires a note.`);
-  if (!result.followUpRequired && followUpNote) throw new TypeError(`Task ${expectedTaskId} cannot retain a follow-up note when follow-up is off.`);
+  if (result.followUpRequired && !followUpNote) throw new TypeError(`To-do task ${expectedTaskId} requires a note.`);
+  if (!result.followUpRequired && followUpNote) throw new TypeError(`Task ${expectedTaskId} cannot retain a to-do note when the to-do is off.`);
   if (result.reason !== null && result.reason !== reason) throw new TypeError(`Task ${expectedTaskId} reason is not canonical.`);
   if (result.note !== note) throw new TypeError(`Task ${expectedTaskId} note is not canonical.`);
-  if (result.followUpNote !== followUpNote) throw new TypeError(`Task ${expectedTaskId} follow-up note is not canonical.`);
+  if (result.followUpNote !== followUpNote) throw new TypeError(`Task ${expectedTaskId} to-do note is not canonical.`);
 }
 
 function expectedOutcome(results) {

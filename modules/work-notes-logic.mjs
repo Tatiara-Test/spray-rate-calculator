@@ -142,7 +142,7 @@ export function normalizeBackup(input) {
     }
   }
   if (!("notes" in input) || !("copied" in input) || !("followUps" in input)) {
-    throw new TypeError("Backup is missing notes, copied state, or follow-ups.");
+    throw new TypeError("Backup is missing notes, copied state, or to-do items.");
   }
   const notes = cleanNotes(input.notes);
   return {

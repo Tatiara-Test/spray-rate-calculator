@@ -5,8 +5,8 @@ const DEMO_FOLLOWUP_PREFIX = "[AI demo sample]";
 
 export const AI_DEMO_RESULTS = Object.freeze({
   dictation: `${DEMO_TRANSCRIPT_PREFIX}\nServiced the 412R at 2,840 hours. Changed the engine oil and filters. Need to order a spare fuel filter on Friday.`,
-  organise: `${DEMO_ORGANISED_PREFIX}\nServiced the 412R at 2,840 hours.\n\nCompleted:\n• Changed the engine oil and filters.\n\nFollow-up:\n• Order a spare fuel filter on Friday.`,
-  summary: `${DEMO_SUMMARY_PREFIX}\n\nFortnight overview\n• Completed scheduled spraying and equipment checks.\n• Serviced the 412R and changed the engine oil and filters.\n• Recorded a follow-up to order a spare fuel filter.`,
+  organise: `${DEMO_ORGANISED_PREFIX}\nServiced the 412R at 2,840 hours.\n\nCompleted:\n• Changed the engine oil and filters.\n\nTo-do:\n• Order a spare fuel filter on Friday.`,
+  summary: `${DEMO_SUMMARY_PREFIX}\n\nFortnight overview\n• Completed scheduled spraying and equipment checks.\n• Serviced the 412R and changed the engine oil and filters.\n• Recorded a to-do to order a spare fuel filter.`,
   followUpDescription: `${DEMO_FOLLOWUP_PREFIX} Order a spare fuel filter`,
 });
 
@@ -462,15 +462,15 @@ export function mountWorkNotesAiDemo(root, options = {}) {
       applyButton.disabled = false;
     } else if (nextMode === "followup") {
       const result = provider.followUpSample(context.date);
-      title.textContent = "Create follow-up — sample";
+      title.textContent = "Create to-do — sample";
       modeCopy.textContent =
-        "The connected version will infer a follow-up. This fixed demonstration is not based on your note.";
-      previewLabel.textContent = "Fixed follow-up description";
+        "The connected version will infer a to-do. This fixed demonstration is not based on your note.";
+      previewLabel.textContent = "Fixed to-do description";
       preview.value = result.description;
       dueDate.value = result.dueDate;
       sourceDate.value = result.sourceDate;
-      resultNote.textContent = "Nothing is saved until you review the normal Follow-up form.";
-      applyButton.textContent = "Review in Follow-up form";
+      resultNote.textContent = "Nothing is saved until you review the normal To-do form.";
+      applyButton.textContent = "Review in To-do form";
       applyButton.disabled = false;
     } else if (nextMode === "summary") {
       const result = provider.summarySample();

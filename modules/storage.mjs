@@ -556,7 +556,7 @@ export function normalizeWorkNotesData(input) {
     throw new TypeError("Work Notes backup is missing copied state.");
   }
   if (!Array.isArray(input.followUps)) {
-    throw new TypeError("Work Notes backup is missing follow-ups.");
+    throw new TypeError("Work Notes backup is missing to-do items.");
   }
   return { ...cloneJson(input), version: WORK_NOTES_VERSION };
 }

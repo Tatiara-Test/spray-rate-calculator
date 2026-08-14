@@ -380,7 +380,7 @@ function renderFollowUps() {
     ? `<div class="followup-list">${openItems.map((item) => followUpCard(item)).join("")}</div>`
     : `
       <div class="empty-state">
-        <strong>No open follow-ups</strong>
+        <strong>No open to-do items</strong>
         <p>Add something that needs another look, with or without a due date.</p>
       </div>
     `;
@@ -412,7 +412,7 @@ function renderAttention() {
   const shown = urgentItems.slice(0, 5);
   const extra = urgentItems.length - shown.length;
   $("#attention-title").textContent =
-    urgentItems.length === 1 ? "1 follow-up needs attention" : `${urgentItems.length} follow-ups need attention`;
+    urgentItems.length === 1 ? "1 to-do needs attention" : `${urgentItems.length} to-do items need attention`;
   $("#attention-items").innerHTML =
     shown
       .map((item) => {
@@ -799,7 +799,7 @@ document.addEventListener("click", async (event) => {
     renderAttention();
     updateStorageUi();
     if (saved) {
-      showToast(nextStatus === "done" ? "Moved to completed history" : "Follow-up reopened");
+      showToast(nextStatus === "done" ? "Moved to completed history" : "To-do reopened");
     }
     return;
   }
@@ -951,7 +951,7 @@ $("#followup-form").addEventListener("submit", (event) => {
   renderFollowUps();
   renderAttention();
   updateStorageUi();
-  if (saved) showToast("Follow-up saved");
+  if (saved) showToast("To-do saved");
 });
 
 $("#export-text").addEventListener("click", () => {
@@ -1056,7 +1056,7 @@ $("#combined-restore-file").addEventListener("change", async (event) => {
       ? `${libraryCount} Paddock Library entries`
       : "current Paddock Library unchanged";
     const workNotesSummary = hasWorkNotes
-      ? `${noteCount} Work Notes and ${followUpCount} follow-ups`
+      ? `${noteCount} Work Notes and ${followUpCount} to-do items`
       : "current Work Notes unchanged";
     const servicingSummary = hasServicing
       ? `${servicingDraftCount} servicing drafts and ${servicingRecordCount} finalised servicing revisions`
@@ -1146,7 +1146,7 @@ $("#restore-file").addEventListener("change", async (event) => {
     const parsed = JSON.parse(await file.text());
     const restored = normalizeBackup(parsed);
     const confirmed = window.confirm(
-      `Restore ${Object.keys(restored.notes).length} notes, ${Object.keys(restored.copied).length} copied ticks, and ${restored.followUps.length} follow-ups? This replaces the records currently on this device.`,
+      `Restore ${Object.keys(restored.notes).length} notes, ${Object.keys(restored.copied).length} copied ticks, and ${restored.followUps.length} to-do items? This replaces the records currently on this device.`,
     );
     if (!confirmed) return;
     data = restored;
