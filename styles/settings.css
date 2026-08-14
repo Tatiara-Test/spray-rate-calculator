@@ -67,6 +67,7 @@ button { cursor: pointer; }
   box-shadow: 0 8px 26px rgba(32, 61, 39, 0.08);
   padding: 16px;
 }
+.settings-card + .settings-card { margin-top: 14px; }
 .settings-card-heading { align-items: start; display: flex; gap: 12px; justify-content: space-between; }
 .settings-card-heading h2 { font-size: 1.15rem; margin: 0 0 4px; }
 .settings-card-heading p:not(.eyebrow) { color: var(--muted); font-size: 0.82rem; line-height: 1.4; margin: 0; }
@@ -80,6 +81,103 @@ button { cursor: pointer; }
   padding: 7px 10px;
 }
 .storage-status { color: var(--muted); font-size: 0.75rem; margin: 7px 0 13px; }
+
+.app-guide-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.app-guide-actions button { flex: 1 1 180px; }
+.app-guide-status {
+  background: var(--green-soft);
+  border-radius: 10px;
+  color: var(--green);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 10px 0 0;
+  padding: 9px 10px;
+}
+
+.app-guide-dialog {
+  background: rgba(8, 20, 12, 0.68);
+  border: 0;
+  box-sizing: border-box;
+  height: 100%;
+  inset: 0;
+  margin: 0;
+  max-height: none;
+  max-width: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(12px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom));
+  position: fixed;
+  width: 100%;
+  z-index: 40;
+}
+.app-guide-dialog::backdrop { background: transparent; }
+.app-guide-dialog-panel {
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+  margin: 0 auto;
+  max-width: 690px;
+  padding: 16px;
+}
+.app-guide-dialog-header { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+.app-guide-dialog-header h2 { font-size: 1.35rem; margin: 0; outline: 0; }
+.app-guide-dialog-header button {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  font-weight: 800;
+  min-height: 44px;
+  padding: 8px 12px;
+}
+.app-guide-intro {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  margin: 12px 0;
+}
+.app-guide-flow {
+  align-items: stretch;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+.app-guide-flow > strong {
+  align-self: center;
+  background: var(--green);
+  border-radius: 11px;
+  color: #fff;
+  grid-column: 1 / -1;
+  justify-self: center;
+  padding: 9px 22px;
+}
+.app-guide-flow > span { color: var(--green); font-size: 1.25rem; font-weight: 900; grid-column: 1 / -1; line-height: 1; text-align: center; }
+.app-guide-flow > div {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+.app-guide-flow b { color: var(--green); font-size: 0.83rem; }
+.app-guide-flow small { color: var(--muted); font-size: 0.74rem; line-height: 1.4; }
+.app-guide-section {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-top: 9px;
+  padding: 12px;
+}
+.app-guide-section h3 { color: var(--green); font-size: 0.96rem; margin: 0 0 7px; }
+.app-guide-section p,
+.app-guide-section ol { color: var(--muted); font-size: 0.8rem; line-height: 1.5; margin: 0; }
+.app-guide-section ol { padding-left: 20px; }
+.app-guide-section li + li { margin-top: 4px; }
+.app-guide-section ol + p { margin-top: 7px; }
 
 .library-form { background: var(--card-muted); border: 1px solid var(--line); border-radius: 13px; margin-bottom: 14px; padding: 12px; }
 .library-form h3 { font-size: 0.95rem; margin: 0 0 10px; }
@@ -179,6 +277,10 @@ button { cursor: pointer; }
   .warning-actions,
   .form-actions,
   .library-row-actions { display: grid; grid-template-columns: 1fr; }
+  .app-guide-actions { display: grid; grid-template-columns: 1fr; }
+  .app-guide-dialog { padding-inline: 5px; }
+  .app-guide-dialog-panel { border-radius: 14px; padding: 12px 10px; }
+  .app-guide-flow { grid-template-columns: 1fr; }
   .library-row { align-items: stretch; grid-template-columns: 1fr; }
   .library-row button { width: 100%; }
 }

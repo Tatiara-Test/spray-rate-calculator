@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-";
 const LEGACY_CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-legacy-";
-const CACHE_NAME = `${CACHE_PREFIX}v19-2026-08-14-todo-language-pdf`;
+const CACHE_NAME = `${CACHE_PREFIX}v22-2026-08-14-spray-summary-app-guide-final`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./config.mjs",
   "./manifest.webmanifest",
   "./brand-mark.png",
+  "./assets/pallathorpe-app-guide.pdf",
   "./robots.txt",
   "./styles/shell.css",
   "./styles/spray.css",
@@ -67,6 +68,7 @@ self.addEventListener("activate", (event) => {
       .then(() => self.clients.claim()),
   );
 });
+
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });

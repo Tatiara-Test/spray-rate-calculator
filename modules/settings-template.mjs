@@ -16,6 +16,18 @@ export const SETTINGS_TEMPLATE = `
         <div class="warning-actions"><button id="retry-library-save" type="button">Retry saving</button><button id="download-library-recovery" type="button">Download recovery copy</button></div>
       </section>
 
+      <section class="settings-card app-guide-card" aria-labelledby="app-guide-heading">
+        <div class="settings-card-heading">
+          <div><p class="eyebrow">Help that works offline</p><h2 id="app-guide-heading">App guide</h2><p>Follow the main workflows in a simple on-screen guide, or keep a printable PDF copy.</p></div>
+          <span>Offline</span>
+        </div>
+        <div class="app-guide-actions">
+          <button class="primary-button" id="view-app-guide" type="button">View guide</button>
+          <button class="quiet-button" id="share-app-guide" type="button">Download / Share PDF</button>
+        </div>
+        <p class="app-guide-status" id="app-guide-status" role="status" aria-live="polite" hidden></p>
+      </section>
+
       <section class="settings-card" aria-labelledby="paddock-library-heading">
         <div class="settings-card-heading">
           <div><p class="eyebrow">Saved farm details</p><h2 id="paddock-library-heading">Paddock Library</h2><p>Names and total hectares are saved on this phone and can be selected inside Spray Operations.</p></div>
@@ -44,6 +56,47 @@ export const SETTINGS_TEMPLATE = `
         </details>
       </section>
     </main>
+
+    <dialog class="app-guide-dialog" id="app-guide-dialog" aria-labelledby="app-guide-dialog-title" aria-describedby="app-guide-dialog-intro">
+      <div class="app-guide-dialog-panel">
+        <header class="app-guide-dialog-header">
+          <div><p class="eyebrow">Pallathorpe Enterprises</p><h2 id="app-guide-dialog-title" tabindex="-1">App guide</h2></div>
+          <button id="close-app-guide" type="button" aria-label="Close app guide">Close</button>
+        </header>
+        <p class="app-guide-intro" id="app-guide-dialog-intro">Choose a section from the Main menu. Saved records stay on this device unless you deliberately export or share a copy.</p>
+
+        <div class="app-guide-flow" aria-label="Main menu sections">
+          <strong>Main menu</strong><span aria-hidden="true">&#8595;</span>
+          <div><b>Spray Operations</b><small>Calculate, save and review tank or Buffer records.</small></div>
+          <div><b>Work Notes</b><small>Write notes, review the fortnight and manage the To-do list.</small></div>
+          <div><b>Weather Shortcuts</b><small>Open saved weather websites or associated apps.</small></div>
+          <div><b>4830 Servicing</b><small>Complete the checklist and prepare a service record.</small></div>
+          <div><b>Settings</b><small>Manage the Paddock Library and open this guide.</small></div>
+        </div>
+
+        <article class="app-guide-section">
+          <h3>Spray Operations</h3>
+          <ol><li>Enter the tank mix in Calculator.</li><li>Save a tank or start and allocate a Buffer.</li><li>Open Paddocks to review the Spray Record and share PDF or CSV copies.</li></ol>
+          <p>Coverage and chemical-equivalent figures are calculated from saved records. They are not GPS-measured unique ground.</p>
+        </article>
+        <article class="app-guide-section">
+          <h3>Work Notes and To-do list</h3>
+          <ol><li>Write or dictate a daily note.</li><li>Review Summary for the selected fortnight.</li><li>Keep outstanding work in the To-do list, then share or download a copy when ready.</li></ol>
+        </article>
+        <article class="app-guide-section">
+          <h3>Weather Shortcuts</h3>
+          <p>Add trusted website links, arrange them, then open the one you need. This section stores shortcuts only; it does not provide a built-in forecast or spray-safety verdict.</p>
+        </article>
+        <article class="app-guide-section">
+          <h3>4830 Servicing</h3>
+          <ol><li>Create a draft for the service date and engine hours.</li><li>Work through the checklist, adding notes, exceptions or to-do items.</li><li>Finalise only when the record is ready, then prepare the PDF copy.</li></ol>
+        </article>
+        <article class="app-guide-section">
+          <h3>Settings, Paddock Library and backup</h3>
+          <p>Add, edit or archive saved paddock names and total hectares in Paddock Library. Combined backup and restore controls are in Work Notes under Data. A restore changes device records only after confirmation.</p>
+        </article>
+      </div>
+    </dialog>
     <div class="settings-toast" id="settings-toast" role="status" aria-live="polite" hidden></div>
   </div>
 `;

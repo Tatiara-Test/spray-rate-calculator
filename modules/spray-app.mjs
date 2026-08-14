@@ -666,6 +666,20 @@ function formatPracticalAmount(amount, kind, fullUnit = true) {
   return `${value} ${fullUnit ? practical.unit : practical.shortUnit}`;
 }
 
+function formatSignedPracticalAmount(amount, kind) {
+  const numeric = Number(amount);
+  if (!Number.isFinite(numeric)) return "Unavailable";
+  const sign = Math.abs(numeric) <= 0.5 ? "" : numeric > 0 ? "+" : "−";
+  return `${sign}${formatPracticalAmount(Math.abs(numeric), kind, false)}`;
+}
+
+function formatSignedHectares(amount) {
+  const numeric = Number(amount);
+  if (!Number.isFinite(numeric)) return "Unavailable";
+  const sign = Math.abs(numeric) <= 0.005 ? "" : numeric > 0 ? "+" : "−";
+  return `${sign}${twoDecimals.format(Math.abs(numeric))} ha`;
+}
+
 function formatAmount(productRate, unit, litres, sprayRate, fullUnit = true) {
   const amount = calculateProductAmount(productRate, unit, litres, sprayRate);
   const kind = unit.startsWith("l_") || unit.startsWith("ml_") ? "ml" : "g";
@@ -1794,37 +1808,92 @@ function renderPaddockBalance(paddock, records) {
     sizeHectares: paddock.sizeHectares,
     records,
   });
-  let title = "Coverage reference";
-  let message;
-  if (balance.state === "missing-size") {
-    message = "Add an optional paddock size the next time you save a record to compare Broadacre coverage.";
-  } else if (balance.state === "unknown-method") {
-    message = `${balance.unknownMethodRecordCount} legacy record${balance.unknownMethodRecordCount === 1 ? " needs" : "s need"} an application method before a whole-paddock balance can be shown.`;
-  } else if (balance.state === "matched") {
-    title = "Broadacre coverage matches";
-    message = `${twoDecimals.format(balance.broadacreHectares)} ha recorded against a ${twoDecimals.format(balance.sizeHectares)} ha paddock.`;
-  } else if (balance.state === "remaining") {
-    title = `${twoDecimals.format(Math.abs(balance.varianceHectares))} ha remaining`;
-    message = `${twoDecimals.format(balance.broadacreHectares)} ha of Broadacre coverage is recorded against the ${twoDecimals.format(balance.sizeHectares)} ha paddock size.`;
-  } else {
-    title = `${twoDecimals.format(balance.varianceHectares)} ha above paddock size`;
-    message = `${twoDecimals.format(balance.broadacreHectares)} ha of Broadacre coverage is recorded against the ${twoDecimals.format(balance.sizeHectares)} ha paddock size.`;
+  const savedSize = balance.sizeHectares === null
+    ? "Not recorded"
+    : `${twoDecimals.format(balance.sizeHectares)} ha`;
+  const activeEquivalent = balance.includedRecordCount
+    ? `${twoDecimals.format(balance.activeSprayEquivalentHectares)} ha`
+    : balance.relevantRecordCount
+      ? "Unavailable"
+      : "0 ha";
+  const equivalentCoverage = balance.activeSprayCoveragePercent === null
+    ? "Unavailable"
+    : `${twoDecimals.format(balance.activeSprayCoveragePercent)}%`;
+  const broadacreReportedCoverage = balance.reportedBroadacreCoveragePercent === null
+    ? "Unavailable"
+    : `${twoDecimals.format(balance.reportedBroadacreCoveragePercent)}%`;
+  const broadacreReported = balance.reportedBroadacreHectares === null
+    ? "Unavailable"
+    : `${twoDecimals.format(balance.reportedBroadacreHectares)} ha · ${broadacreReportedCoverage}`;
+  const cameraEquivalent = balance.cameraActiveSprayEquivalentHectares === null
+    ? "Unavailable"
+    : `${twoDecimals.format(balance.cameraActiveSprayEquivalentHectares)} ha`;
+
+  let onePassMessage = balance.activeSprayState === "unavailable"
+    ? "One-paddock comparison unavailable until the invalid saved records are reviewed."
+    : "Add a saved paddock total to compare this result with one complete paddock.";
+  if (balance.activeSprayVarianceHectares !== null) {
+    if (Math.abs(balance.activeSprayVarianceHectares) <= 0.005) {
+      onePassMessage = "Calculated active-spray equivalent matches one complete saved paddock.";
+    } else if (balance.activeSprayVarianceHectares > 0) {
+      onePassMessage = `${twoDecimals.format(balance.activeSprayVarianceHectares)} ha equivalent beyond one complete saved paddock.`;
+    } else {
+      onePassMessage = `${twoDecimals.format(Math.abs(balance.activeSprayVarianceHectares))} ha equivalent short of one complete saved paddock.`;
+    }
   }
-  const cameraMessage = balance.cameraRecordCount
-    ? `<p>${twoDecimals.format(balance.cameraLitres)} L recorded as Camera allocation; it is excluded from whole-paddock coverage.</p>`
+
+  const issueMessages = [...new Set(balance.recordIssues.map((issue) => issue.message))];
+  const issueList = issueMessages.length
+    ? `<ul class="coverage-issues">${issueMessages.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ul>`
     : "";
-  const chemicalRows = balance.chemicalVariances.length
-    ? `<ul class="chemical-balance-list">${balance.chemicalVariances.map((chemical) => {
-        const difference = formatPracticalAmount(Math.abs(chemical.varianceAmountBase), chemical.baseUnit);
-        const relation = chemical.state === "matched"
-          ? "matches one full-paddock mix amount"
-          : chemical.state === "over"
-            ? `${difference} above one full-paddock mix amount`
-            : `${difference} below one full-paddock mix amount`;
-        return `<li><strong>${escapeHtml(chemical.name)}: ${escapeHtml(relation)}</strong><small>Recorded Broadacre tank-mix equivalent; not a claim of chemical discharged.</small></li>`;
-      }).join("")}</ul>`
-    : "";
-  return `<section class="paddock-balance" data-state="${balance.state}"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(message)}</p>${cameraMessage}${chemicalRows}</section>`;
+
+  const productRows = balance.productSummaries.map((product) => {
+    if (product.status === "unavailable") {
+      const reason = product.issues[0]?.message || "Required rate or amount details are unavailable.";
+      return `<li data-state="unavailable"><strong>${escapeHtml(product.name)}</strong><span>Calculated chemical-equivalent unavailable</span><small>${escapeHtml(reason)}</small></li>`;
+    }
+    const chemicalCoverage = product.chemicalEquivalentCoveragePercent === null
+      ? "saved-total percentage unavailable"
+      : `${twoDecimals.format(product.chemicalEquivalentCoveragePercent)}% of saved paddock`;
+    const varianceAmount = formatSignedPracticalAmount(product.varianceAmountBase, product.baseUnit);
+    const varianceHectares = formatSignedHectares(product.varianceEquivalentHectares);
+    let fullPaddockLine;
+    if (product.fullPaddockVarianceAmountBase === null) {
+      fullPaddockLine = product.rateStatus === "varied"
+        ? "One-paddock amount comparison unavailable because saved rates differ."
+        : "One-paddock amount comparison unavailable without a saved total and one clear rate.";
+    } else {
+      fullPaddockLine = `${formatSignedPracticalAmount(product.fullPaddockVarianceAmountBase, product.baseUnit)} against one complete saved paddock.`;
+    }
+    const warnings = [
+      product.status === "partial" ? "Some records were unavailable, so this product result is partial." : "",
+      product.incompatibleForm ? "Liquid and mass forms are kept separate and are not combined." : "",
+    ].filter(Boolean).join(" ");
+    return `<li data-state="${escapeHtml(product.state)}">
+      <strong>${escapeHtml(product.name)}</strong>
+      <span>Calculated chemical-equivalent: ${twoDecimals.format(product.chemicalEquivalentHectares)} ha · ${escapeHtml(chemicalCoverage)}</span>
+      <small>${escapeHtml(`${varianceAmount} (${varianceHectares} equivalent) against calculated active-spray equivalent on records containing this product.`)}</small>
+      <small>${escapeHtml(fullPaddockLine)}</small>
+      ${warnings ? `<small class="balance-warning">${escapeHtml(warnings)}</small>` : ""}
+    </li>`;
+  }).join("");
+  const chemicalSummary = productRows
+    ? `<details class="chemical-equivalent-details"><summary>Chemical-equivalent summary · ${balance.productSummaries.length} product${balance.productSummaries.length === 1 ? "" : "s"}</summary><ul class="chemical-balance-list">${productRows}</ul></details>`
+    : `<p>No chemical products are recorded for this paddock.</p>`;
+
+  return `<section class="paddock-balance" data-state="${escapeHtml(balance.activeSprayState)}">
+    <div class="paddock-balance-heading"><span><small>Calculated record summary</small><strong>Spray coverage &amp; chemical use</strong></span><b>${escapeHtml(equivalentCoverage)}</b></div>
+    <div class="coverage-metrics">
+      <span><small>Saved paddock</small><strong>${escapeHtml(savedSize)}</strong></span>
+      <span><small>Active-spray equivalent</small><strong>${escapeHtml(activeEquivalent)}</strong></span>
+      <span><small>Broadacre reported</small><strong>${escapeHtml(broadacreReported)}</strong></span>
+      <span><small>Camera equivalent</small><strong>${escapeHtml(cameraEquivalent)}</strong></span>
+    </div>
+    <p class="one-pass-reference">${escapeHtml(onePassMessage)}</p>
+    <p class="coverage-caveat">Calculated from saved litres and calibrated L/ha. This is not GPS-measured unique ground; Camera passes and overlaps may change actual coverage.</p>
+    ${issueList}
+    ${chemicalSummary}
+  </section>`;
 }
 
 function renderPaddockCard(paddock) {
