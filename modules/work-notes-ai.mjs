@@ -561,12 +561,12 @@ export function mountWorkNotesAi(root, options = {}) {
         preview.value = "";
         dueDate.value = "";
         sourceDate.value = result.sourceDate || requestContext.date || "";
-        resultNote.textContent = "No clear follow-up was found in this note. Nothing has been added or changed.";
+        resultNote.textContent = "No clear to-do was found in this note. Nothing has been added or changed.";
       } else if (requestMode === "followup") {
         preview.value = result.description;
         dueDate.value = result.dueDate || "";
         sourceDate.value = result.sourceDate || requestContext.date || "";
-        resultNote.textContent = "Review this proposal in the normal Follow-up form before saving it.";
+        resultNote.textContent = "Review this proposal in the normal To-do form before saving it.";
       } else {
         preview.value = result.text;
         resultNote.textContent = "This draft is not saved. Copy it only after review.";
@@ -622,12 +622,12 @@ export function mountWorkNotesAi(root, options = {}) {
       generateButton.textContent = "Generate preview";
       applyButton.textContent = "Replace note with reviewed text";
     } else if (nextMode === "followup") {
-      title.textContent = "Create follow-up";
-      modeCopy.textContent = "Only this note is sent. AI proposes a follow-up; the normal form remains the final save step.";
-      previewLabel.textContent = "Follow-up description";
-      resultNote.textContent = "Generate and review a proposal before opening the normal Follow-up form.";
+      title.textContent = "Create to-do";
+      modeCopy.textContent = "Only this note is sent. AI proposes a to-do; the normal form remains the final save step.";
+      previewLabel.textContent = "To-do description";
+      resultNote.textContent = "Generate and review a proposal before opening the normal To-do form.";
       generateButton.textContent = "Generate preview";
-      applyButton.textContent = "Review in Follow-up form";
+      applyButton.textContent = "Review in To-do form";
     } else {
       title.textContent = "Fortnight summary";
       modeCopy.textContent = "Only the 14 displayed dates and their note text are sent. The result is a copyable draft.";

@@ -29,13 +29,13 @@ export const WORK_NOTES_TEMPLATE = `
           <div class="period-actions"><button id="return-current" class="secondary-button" type="button" hidden>Current fortnight</button><button id="open-today" class="primary-button" type="button">Open today’s note</button></div>
         </section>
         <aside id="due-attention" class="attention-card" aria-labelledby="attention-title" hidden>
-          <div><p class="eyebrow">Needs attention</p><h2 id="attention-title">Due follow-ups</h2></div><div id="attention-items"></div>
-          <button class="attention-action" type="button" data-section-target="followups">View follow-ups</button>
+          <div><p class="eyebrow">Needs attention</p><h2 id="attention-title">Due to-do items</h2></div><div id="attention-items"></div>
+          <button class="attention-action" type="button" data-section-target="followups">View to-do list</button>
         </aside>
         <nav class="section-tabs" aria-label="Work Notes sections" role="tablist">
           <button id="notes-tab" class="section-tab active" type="button" role="tab" aria-selected="true" aria-controls="notes-section" data-section-target="notes">Notes</button>
           <button id="summary-tab" class="section-tab" type="button" role="tab" aria-selected="false" aria-controls="summary-section" data-section-target="summary">Summary</button>
-          <button id="followups-tab" class="section-tab" type="button" role="tab" aria-selected="false" aria-controls="followups-section" data-section-target="followups">Follow-ups <span id="followup-count" class="tab-count" hidden>0</span></button>
+          <button id="followups-tab" class="section-tab" type="button" role="tab" aria-selected="false" aria-controls="followups-section" data-section-target="followups">To-do list <span id="followup-count" class="tab-count" hidden>0</span></button>
         </nav>
         <section id="notes-section" class="app-section" role="tabpanel" aria-labelledby="notes-tab" data-section="notes">
           <div class="section-intro"><div><p class="eyebrow">14-day wages period</p><h2>Daily notes</h2></div><div class="note-legend" aria-label="Note status legend"><span><i class="legend-dot today-dot"></i> Today</span><span><i class="legend-dot saved-dot"></i> Note</span><span><i class="legend-dot missing-dot"></i> Missing</span></div></div>
@@ -50,7 +50,7 @@ export const WORK_NOTES_TEMPLATE = `
           <p class="section-help">Copy one day at a time. A green tick stays until that note is edited.</p><div id="summary-list" class="summary-list"></div>
         </section>
         <section id="followups-section" class="app-section" role="tabpanel" aria-labelledby="followups-tab" data-section="followups" hidden>
-          <div class="section-intro"><div><p class="eyebrow">Across all fortnights</p><h2>Follow-ups</h2></div><button id="add-followup" class="primary-button compact-button" type="button">Add follow-up</button></div>
+          <div class="section-intro"><div><p class="eyebrow">Across all fortnights</p><h2>To-do list</h2></div><button id="add-followup" class="primary-button compact-button" type="button">Add to-do</button></div>
           <div id="open-followups"></div>
           <details id="completed-details" class="completed-panel"><summary>Completed history <span id="completed-count" class="summary-count">0</span></summary><div id="completed-followups"></div></details>
           <section class="data-card" aria-labelledby="data-title">
@@ -81,14 +81,14 @@ export const WORK_NOTES_TEMPLATE = `
       </section>
       <label class="note-field" for="note-text"><span>What did you do?</span><textarea id="note-text" rows="12" spellcheck="true" autocomplete="off" placeholder="Type your work notes here…"></textarea></label>
       <p class="dictation-hint">Manual typing remains available whether the AI service is connected or not.</p>
-      <div class="ai-note-sample-actions" aria-label="AI note actions"><button id="ai-organise-note" class="quiet-button compact-button" type="button">Organise note</button><button id="ai-create-followup-note" class="quiet-button compact-button" type="button">Create follow-up</button></div>
-      <div class="dialog-actions"><button id="restore-previous" class="quiet-button" type="button" disabled>Restore previous</button><button id="followup-from-note" class="secondary-button" type="button">Add follow-up</button><button id="done-note" class="primary-button" type="button">Done</button></div>
+      <div class="ai-note-sample-actions" aria-label="AI note actions"><button id="ai-organise-note" class="quiet-button compact-button" type="button">Organise note</button><button id="ai-create-followup-note" class="quiet-button compact-button" type="button">Create to-do</button></div>
+      <div class="dialog-actions"><button id="restore-previous" class="quiet-button" type="button" disabled>Restore previous</button><button id="followup-from-note" class="secondary-button" type="button">Add to-do</button><button id="done-note" class="primary-button" type="button">Done</button></div>
     </div></dialog>
     <dialog id="followup-dialog" class="followup-dialog" aria-labelledby="followup-dialog-title"><form id="followup-form" class="dialog-shell">
-      <header class="dialog-header"><div><p class="eyebrow">Keep it on the list</p><h2 id="followup-dialog-title">Add follow-up</h2></div><button id="cancel-followup-x" class="square-button close-button" type="button" aria-label="Close follow-up form">×</button></header>
+      <header class="dialog-header"><div><p class="eyebrow">Keep it on the list</p><h2 id="followup-dialog-title">Add to-do</h2></div><button id="cancel-followup-x" class="square-button close-button" type="button" aria-label="Close to-do form">×</button></header>
       <label class="form-field"><span>Description</span><textarea id="followup-description" rows="4" required spellcheck="true" placeholder="What needs doing?"></textarea></label>
       <div class="form-grid"><label class="form-field"><span>Due date <small>optional</small></span><input id="followup-due" type="date" /></label><label class="form-field"><span>Original note date <small>optional</small></span><input id="followup-source" type="date" /></label></div>
-      <div class="dialog-actions"><button id="cancel-followup" class="quiet-button" type="button">Cancel</button><button class="primary-button" type="submit">Save follow-up</button></div>
+      <div class="dialog-actions"><button id="cancel-followup" class="quiet-button" type="button">Cancel</button><button class="primary-button" type="submit">Save to-do</button></div>
     </form></dialog>
     <dialog id="work-notes-download-dialog" aria-labelledby="work-notes-download-dialog-title" aria-describedby="work-notes-download-dialog-message">
       <div class="dialog-shell">

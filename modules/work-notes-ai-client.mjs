@@ -267,7 +267,7 @@ function summaryText(result) {
     sections.push(`Highlights:\n${result.highlights.map((item) => `- ${item.trim()}`).join("\n")}`);
   }
   if (result.follow_ups.length) {
-    sections.push(`Follow-ups:\n${result.follow_ups.map((item) => `- ${item.trim()}`).join("\n")}`);
+    sections.push(`To-do list:\n${result.follow_ups.map((item) => `- ${item.trim()}`).join("\n")}`);
   }
   return sections.join("\n\n");
 }
@@ -286,23 +286,23 @@ function validateAssistResult(action, envelope, requestMeta) {
     });
   }
   if (action === "extract_follow_up") {
-    requireExactKeys(value, ["has_follow_up", "follow_up_text", "assignee", "due_date"], "The follow-up result");
+    requireExactKeys(value, ["has_follow_up", "follow_up_text", "assignee", "due_date"], "The to-do result");
     if (typeof value.has_follow_up !== "boolean") {
-      throw new AiServiceError("invalid-response", "The follow-up result has an invalid status.");
+      throw new AiServiceError("invalid-response", "The to-do result has an invalid status.");
     }
     if (value.due_date !== null && !isIsoDate(value.due_date)) {
-      throw new AiServiceError("invalid-response", "The follow-up due date is invalid.");
+      throw new AiServiceError("invalid-response", "The to-do due date is invalid.");
     }
     if (value.assignee !== null && (typeof value.assignee !== "string" || value.assignee.length > 200)) {
-      throw new AiServiceError("invalid-response", "The follow-up assignee is invalid.");
+      throw new AiServiceError("invalid-response", "The to-do assignee is invalid.");
     }
     if (!value.has_follow_up) {
       if (String(value.follow_up_text || "").trim() || value.assignee !== null || value.due_date !== null) {
-        throw new AiServiceError("invalid-response", "The no-follow-up result contains contradictory details.");
+        throw new AiServiceError("invalid-response", "The no-to-do result contains contradictory details.");
       }
       return Object.freeze({ kind: "no-followup", sourceDate: requestMeta.sourceDate });
     }
-    const description = requireText(value.follow_up_text, "The follow-up description", { maxLength: 3_000 }).trim();
+    const description = requireText(value.follow_up_text, "The to-do description", { maxLength: 3_000 }).trim();
     const assignee = String(value.assignee || "").trim();
     return Object.freeze({
       kind: "followup",

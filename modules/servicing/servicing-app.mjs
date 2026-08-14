@@ -186,8 +186,8 @@ export function mountServicingApp(host, options = {}) {
           </select></label>
           <label class="task-reason" ${needsReason ? "" : "hidden"}><span>${stateValue === "deferred" ? "Deferral reason" : "Not applicable reason"}</span><textarea data-task-field="reason" rows="2" maxlength="1000" ${needsReason ? "required" : ""}>${escapeHtml(result.reason)}</textarea></label>
           <label><span>Task note <small>optional</small></span><textarea data-task-field="note" rows="2" maxlength="2000">${escapeHtml(result.note)}</textarea></label>
-          <label class="follow-up-toggle"><input data-task-field="followUpRequired" type="checkbox" ${followUp ? "checked" : ""} /><span>Follow-up required</span></label>
-          <label class="follow-up-note" ${followUp ? "" : "hidden"}><span>Follow-up note</span><textarea data-task-field="followUpNote" rows="2" maxlength="1000" ${followUp ? "required" : ""}>${escapeHtml(result.followUpNote)}</textarea></label>
+          <label class="follow-up-toggle"><input data-task-field="followUpRequired" type="checkbox" ${followUp ? "checked" : ""} /><span>To-do required</span></label>
+          <label class="follow-up-note" ${followUp ? "" : "hidden"}><span>To-do note</span><textarea data-task-field="followUpNote" rows="2" maxlength="1000" ${followUp ? "required" : ""}>${escapeHtml(result.followUpNote)}</textarea></label>
         </div>
       </article>`;
   }
@@ -353,7 +353,7 @@ export function mountServicingApp(host, options = {}) {
       return false;
     }
     if (patch.followUpRequired && !patch.followUpNote.trim()) {
-      showToast("Enter the follow-up note to save this task.", true);
+      showToast("Enter the to-do note to save this task.", true);
       card.querySelector('[data-task-field="followUpNote"]').focus();
       return false;
     }
