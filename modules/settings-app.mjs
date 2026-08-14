@@ -1,4 +1,5 @@
 import { SETTINGS_TEMPLATE } from "./settings-template.mjs";
+import { handFilesToShareSheet } from "./share-files.mjs";
 import {
   PADDOCK_LIBRARY_VERSION,
   PADDOCK_STORE_VERSION,
@@ -17,6 +18,9 @@ import {
   restoreLibraryEntry,
   updateLibraryEntry,
 } from "./paddock-library.mjs";
+
+const APP_GUIDE_FILENAME = "pallathorpe-app-guide.pdf";
+const APP_GUIDE_URL = new URL("../assets/pallathorpe-app-guide.pdf", import.meta.url).href;
 
 const emptyLibrary = () => ({ version: PADDOCK_LIBRARY_VERSION, entries: [] });
 const emptyPaddockStore = () => ({
@@ -67,6 +71,12 @@ export function mountSettingsApp(host, options = {}) {
   const writeWarning = $("#library-write-warning");
   const retryLibrarySave = $("#retry-library-save");
   const downloadLibraryRecovery = $("#download-library-recovery");
+  const viewAppGuide = $("#view-app-guide");
+  const shareAppGuide = $("#share-app-guide");
+  const appGuideStatus = $("#app-guide-status");
+  const appGuideDialog = $("#app-guide-dialog");
+  const appGuideDialogTitle = $("#app-guide-dialog-title");
+  const closeAppGuide = $("#close-app-guide");
   const toast = $("#settings-toast");
 
   let library = emptyLibrary();
@@ -76,6 +86,8 @@ export function mountSettingsApp(host, options = {}) {
   let pendingSuccessMessage = "Paddock Library saved.";
   let editingEntryId = null;
   let toastTimer = null;
+  let guideReturnFocus = null;
+  let guideFallbackOpen = false;
 
   function hasExternalUnsavedLibraryChanges() {
     try {
@@ -104,6 +116,10 @@ export function mountSettingsApp(host, options = {}) {
 
   function downloadText(filename, text, type = "application/json") {
     const blob = new Blob([text], { type: `${type};charset=utf-8` });
+    downloadBlob(filename, blob);
+  }
+
+  function downloadBlob(filename, blob) {
     const url = URL.createObjectURL(blob);
     const link = browserDocument.createElement("a");
     link.href = url;
@@ -112,6 +128,82 @@ export function mountSettingsApp(host, options = {}) {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function setAppGuideStatus(message = "") {
+    appGuideStatus.textContent = message;
+    appGuideStatus.hidden = !message;
+  }
+
+  function openAppGuide() {
+    guideReturnFocus = root.activeElement || browserDocument.activeElement;
+    if (typeof appGuideDialog.showModal === "function") appGuideDialog.showModal();
+    else {
+      guideFallbackOpen = true;
+      appGuideDialog.hidden = false;
+      appGuideDialog.setAttribute("aria-modal", "true");
+    }
+    appGuideDialogTitle.focus();
+  }
+
+  function dismissAppGuide() {
+    if (appGuideDialog.open && typeof appGuideDialog.close === "function") appGuideDialog.close();
+    if (guideFallbackOpen) {
+      guideFallbackOpen = false;
+      appGuideDialog.hidden = true;
+      appGuideDialog.removeAttribute("aria-modal");
+    }
+    if (guideReturnFocus && typeof guideReturnFocus.focus === "function") guideReturnFocus.focus();
+    guideReturnFocus = null;
+  }
+
+  async function loadAppGuidePdf() {
+    const fetchLike = options.fetchLike || globalThis.fetch;
+    if (typeof fetchLike !== "function") throw new Error("The offline app guide PDF is unavailable.");
+    const response = await fetchLike(APP_GUIDE_URL, { cache: "force-cache" });
+    if (!response?.ok) throw new Error("The offline app guide PDF is unavailable.");
+    return new Blob([await response.arrayBuffer()], { type: "application/pdf" });
+  }
+
+  async function downloadOrShareAppGuide() {
+    if (shareAppGuide.disabled) return;
+    shareAppGuide.disabled = true;
+    setAppGuideStatus("Preparing the offline app guide PDF...");
+    try {
+      const blob = await loadAppGuidePdf();
+      const FileConstructor = options.FileConstructor || globalThis.File;
+      const file = typeof FileConstructor === "function"
+        ? new FileConstructor([blob], APP_GUIDE_FILENAME, { type: "application/pdf" })
+        : null;
+      const shareResult = file
+        ? await handFilesToShareSheet({
+            navigatorLike: options.navigatorLike ?? globalThis.navigator,
+            files: [file],
+            title: "Pallathorpe Enterprises App guide",
+            text: "Offline app guide PDF copy.",
+          })
+        : { mode: "download", reason: "unsupported" };
+
+      if (shareResult.mode === "cancelled") {
+        setAppGuideStatus();
+        return;
+      }
+      if (shareResult.mode === "shared") {
+        setAppGuideStatus("The app guide was handed to your phone for sharing.");
+        return;
+      }
+
+      downloadBlob(APP_GUIDE_FILENAME, blob);
+      setAppGuideStatus(
+        shareResult.reason === "share-failed"
+          ? "Native sharing was unavailable. The app guide PDF is ready in your downloads."
+          : "The app guide PDF is ready in your downloads.",
+      );
+    } catch {
+      setAppGuideStatus("The offline app guide PDF is unavailable. Reopen the app online to finish the current update, then try again.");
+    } finally {
+      shareAppGuide.disabled = false;
+    }
   }
 
   function formatHectares(value) {
@@ -383,11 +475,28 @@ export function mountSettingsApp(host, options = {}) {
       extension === "json" ? "application/json" : "text/plain",
     );
   });
+  viewAppGuide.addEventListener("click", openAppGuide);
+  closeAppGuide.addEventListener("click", dismissAppGuide);
+  appGuideDialog.addEventListener("click", (event) => {
+    if (event.target === appGuideDialog) dismissAppGuide();
+  });
+  appGuideDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    dismissAppGuide();
+  });
+  root.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && guideFallbackOpen) {
+      event.preventDefault();
+      dismissAppGuide();
+    }
+  });
+  shareAppGuide.addEventListener("click", downloadOrShareAppGuide);
 
   refresh();
 
   return {
     refresh,
     hasUnsavedChanges: () => pendingSave,
+    closeGuide: dismissAppGuide,
   };
 }
