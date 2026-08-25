@@ -1,7 +1,8 @@
 import { calculatePaddockBalance } from "./paddock-balance.mjs";
-import { MACHINES, SPRAY_METHODS } from "./storage.mjs";
+import { MACHINES, PROPERTY_SETTINGS_KEY, SPRAY_METHODS } from "./storage.mjs";
 import { missingProductSlots, productDisplayName } from "./product-records.mjs";
 import { loadPdfLib } from "./pdf-lib-loader.mjs";
+import { loadPropertySettings, propertyIdentitySnapshot } from "./property-settings.mjs";
 
 export const UNIT_LABELS = Object.freeze({
   l_ha: "L/ha",
@@ -157,7 +158,18 @@ export function exportDescriptor(paddock, generatedAt = new Date().toISOString()
     : revision > previous
       ? "Amended"
       : paddock.lastGeneratedLabel || "Original";
-  return { label, revision, generatedAt };
+  const snapshotRecords = (paddock?.tanks || []).filter((tank) => tank.propertySnapshot);
+  const snapshots = [...new Map(snapshotRecords.map((tank) => [JSON.stringify(tank.propertySnapshot), tank.propertySnapshot])).values()];
+  const totalRecords = (paddock?.tanks || []).length;
+  const hasLegacyRecords = snapshotRecords.length < totalRecords;
+  let identity;
+  if (snapshots.length === 1 && !hasLegacyRecords) identity = snapshots[0];
+  else if (snapshots.length > 0) identity = { businessName: "Mixed property identities", shortName: "Mixed identities", emblem: { id: "farmer-assistant-fh", version: 1 } };
+  else { try { identity = propertyIdentitySnapshot(loadPropertySettings(globalThis.localStorage, PROPERTY_SETTINGS_KEY)); } catch { identity = propertyIdentitySnapshot(); } }
+  const identityStatus = snapshots.length === 0
+    ? "legacy/current-profile fallback"
+    : (hasLegacyRecords || snapshots.length > 1 ? "mixed" : "snapshot");
+  return { label, revision, generatedAt, ...identity, identityStatus };
 }
 
 function sortedTanks(paddock) {
@@ -222,7 +234,8 @@ export function buildPaddockCsv(paddock, descriptor) {
   const totals = recordTotals(paddock, balance);
   const activeIssues = uniqueMessages(balance.recordIssues);
   const rows = [
-    ["Pallathorpe Enterprises spray record"],
+    [`${descriptor.businessName || "Pallathorpe Enterprises"} spray record`],
+    ["Identity", descriptor.identityStatus === "mixed" ? "Mixed property identities disclosed in saved records" : descriptor.identityStatus || "Current profile"],
     ["Paddock", paddock.name],
     ["Saved paddock total (ha)", balance.sizeHectares === null ? "" : exportNumber.format(balance.sizeHectares)],
     ["Record status", descriptor.label],
@@ -351,7 +364,10 @@ export function buildExportFilenames(paddock, descriptor) {
     : descriptor.generatedAt.slice(0, 10);
   const operators = [...new Set(tanks.map((tank) => tank.operator).filter(Boolean))];
   const operatorPart = operators.length === 1 ? slug(operators[0]) : "multiple-operators";
-  const base = `${slug(paddock.name)}_${datePart}_${operatorPart}_rev-${descriptor.revision}`;
+  const propertyPart = !descriptor.identityStatus || descriptor.identityStatus === "legacy/current-profile fallback"
+    ? ""
+    : `${slug(descriptor.shortName || "pallathorpe")}_`;
+  const base = `${propertyPart}${slug(paddock.name)}_${datePart}_${operatorPart}_rev-${descriptor.revision}`;
   return { csv: `${base}.csv`, pdf: `${base}.pdf` };
 }
 
@@ -386,8 +402,9 @@ export function buildPdfContentLines(paddock, descriptor) {
   const balance = balanceFor(paddock);
   const totals = recordTotals(paddock, balance);
   const lines = [
-    { kind: "brand", text: "Pallathorpe Enterprises" },
+    { kind: "brand", text: descriptor.businessName || "Pallathorpe Enterprises" },
     { kind: "title", text: "Spray Record" },
+    { kind: "meta", text: `Identity: ${descriptor.identityStatus === "mixed" ? "Mixed property identities disclosed in saved records" : descriptor.identityStatus || "Current profile"}` },
     { kind: "meta", text: `Paddock: ${paddock.name}` },
     { kind: "meta", text: `Saved paddock total: ${balance.sizeHectares === null ? "Not recorded" : `${displayNumber.format(balance.sizeHectares)} ha`}` },
     { kind: "meta", text: `${descriptor.label} | Revision ${descriptor.revision}` },
@@ -479,9 +496,9 @@ export async function buildPaddockPdf(paddock, descriptor, pdfLib = null, option
   const { PDFDocument, StandardFonts, rgb } = resolvedPdfLib;
   const document = await PDFDocument.create();
   document.setTitle(`${paddock.name} spray record`);
-  document.setAuthor("Pallathorpe Enterprises");
+  document.setAuthor(descriptor.businessName || "Pallathorpe Enterprises");
   document.setSubject(`${descriptor.label} revision ${descriptor.revision} | calculated spray coverage and chemical-equivalent summary`);
-  document.setKeywords(["Pallathorpe Enterprises", "spray record", "calculated active-spray equivalent"]);
+  document.setKeywords([descriptor.businessName || "Pallathorpe Enterprises", "spray record", "calculated active-spray equivalent"]);
   const generatedDate = new Date(descriptor.generatedAt);
   if (!Number.isNaN(generatedDate.getTime())) {
     document.setCreationDate(generatedDate);
@@ -526,13 +543,13 @@ export async function buildPaddockPdf(paddock, descriptor, pdfLib = null, option
         const scale = brandImage.scaleToFit(46, 46);
         page.drawImage(brandImage, { x: PAGE_MARGIN + 9, y: 761, width: scale.width, height: scale.height });
       }
-      page.drawText("Pallathorpe Enterprises", { x: PAGE_MARGIN + 66, y: 796, size: 10, font: bold, color: greenMid });
+      page.drawText(safePdfText(descriptor.businessName || "Pallathorpe Enterprises"), { x: PAGE_MARGIN + 66, y: 796, size: 10, font: bold, color: greenMid });
       page.drawText("Spray Record", { x: PAGE_MARGIN + 66, y: 772, size: 20, font: bold, color: ink });
       drawRight(`${descriptor.label} | Revision ${descriptor.revision}`, PAGE_SIZE[0] - PAGE_MARGIN - 10, 793, 8.5, bold, green);
       drawRight(paddock.name, PAGE_SIZE[0] - PAGE_MARGIN - 10, 773, 10, bold, ink);
       y = 741;
     } else {
-      page.drawText("Pallathorpe Enterprises", { x: PAGE_MARGIN, y: 814, size: 8.5, font: bold, color: greenMid });
+      page.drawText(safePdfText(descriptor.businessName || "Pallathorpe Enterprises"), { x: PAGE_MARGIN, y: 814, size: 8.5, font: bold, color: greenMid });
       page.drawText("Spray Record", { x: PAGE_MARGIN, y: 795, size: 14, font: bold, color: ink });
       drawRight(`${paddock.name} | Revision ${descriptor.revision}`, PAGE_SIZE[0] - PAGE_MARGIN, 797, 8, regular, muted);
       page.drawLine({ start: { x: PAGE_MARGIN, y: 784 }, end: { x: PAGE_SIZE[0] - PAGE_MARGIN, y: 784 }, thickness: 1.1, color: green });
@@ -788,7 +805,7 @@ export async function buildPaddockPdf(paddock, descriptor, pdfLib = null, option
   const pages = document.getPages();
   pages.forEach((pdfPage, index) => {
     pdfPage.drawLine({ start: { x: PAGE_MARGIN, y: 40 }, end: { x: PAGE_SIZE[0] - PAGE_MARGIN, y: 40 }, thickness: 0.45, color: rule });
-    pdfPage.drawText("Pallathorpe Enterprises calculated spray record", { x: PAGE_MARGIN, y: 25, size: 7.1, font: regular, color: muted });
+    pdfPage.drawText(`${safePdfText(descriptor.businessName || "Pallathorpe Enterprises")} calculated spray record`, { x: PAGE_MARGIN, y: 25, size: 7.1, font: regular, color: muted });
     const revisionText = `Revision ${descriptor.revision}`;
     const pageText = `Page ${index + 1} of ${pages.length}`;
     pdfPage.drawText(revisionText, { x: PAGE_SIZE[0] - PAGE_MARGIN - 72 - regular.widthOfTextAtSize(revisionText, 7.1), y: 25, size: 7.1, font: regular, color: muted });

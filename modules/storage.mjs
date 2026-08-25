@@ -18,6 +18,13 @@ import {
   servicingStorageKeys,
   upsertServicingDraft,
 } from "./servicing/servicing-store.mjs";
+import {
+  propertySettingsKey,
+  PROPERTY_SETTINGS_VERSION,
+  inspectPropertySettings,
+  normalizePropertyIdentitySnapshot,
+  normalizePropertySettings,
+} from "./property-settings.mjs";
 
 export { PADDOCK_LIBRARY_VERSION };
 export {
@@ -37,6 +44,8 @@ export const SERVICING_COMPATIBILITY_KEY = SERVICING_STORAGE_KEYS.compatibility;
 export const PADDOCKS_KEY = `${COMBINED_PREFIX}:paddocks`;
 export const WORK_NOTES_KEY = `${COMBINED_PREFIX}:work-notes`;
 export const PROFILE_KEY = `${COMBINED_PREFIX}:profile`;
+export const PROPERTY_SETTINGS_KEY = propertySettingsKey(COMBINED_PREFIX);
+export { PROPERTY_SETTINGS_VERSION };
 export const WEATHER_SETTINGS_KEY = `${COMBINED_PREFIX}:weather-settings`;
 export const WEATHER_CACHE_KEY = `${COMBINED_PREFIX}:weather-cache`;
 export const PADDOCK_LIBRARY_KEY = `${COMBINED_PREFIX}:paddock-library`;
@@ -50,7 +59,7 @@ export const PADDOCK_STORE_VERSION = 3;
 export const WORK_NOTES_VERSION = 1;
 export const PROFILE_VERSION = 1;
 export const WEATHER_SETTINGS_VERSION = 1;
-export const COMBINED_BACKUP_VERSION = 4;
+export const COMBINED_BACKUP_VERSION = 5;
 
 export function inspectServicingStore(storage = globalThis.localStorage) {
   return inspectServicingStoreForKeys(storage, SERVICING_STORAGE_KEYS);
@@ -181,6 +190,9 @@ export function normalizePaddockStore(input) {
       const paddockSelection = Object.hasOwn(tank, "paddockSelection")
         ? normalizeSelectedPaddockSnapshot(tank.paddockSelection)
         : null;
+      const propertySnapshot = Object.hasOwn(tank, "propertySnapshot")
+        ? normalizePropertyIdentitySnapshot(tank.propertySnapshot)
+        : null;
       return {
         ...cloneJson(tank),
         id: text(tank.id) || `migrated-tank-${paddockIndex + 1}-${tankIndex + 1}`,
@@ -197,6 +209,7 @@ export function normalizePaddockStore(input) {
         recordType: "tank",
         products,
         ...(Object.hasOwn(tank, "paddockSelection") ? { paddockSelection } : {}),
+        ...(Object.hasOwn(tank, "propertySnapshot") ? { propertySnapshot } : {}),
       };
     });
     return {
@@ -333,6 +346,9 @@ export function normalizePaddockStore(input) {
     if (run.status === "cancelled" && (allocations.length || finalReading !== controllerStartLitres)) {
       throw new TypeError(`Cancelled paddock run ${runIndex + 1} has an inconsistent audit record.`);
     }
+    const propertySnapshot = Object.hasOwn(run, "propertySnapshot")
+      ? normalizePropertyIdentitySnapshot(run.propertySnapshot)
+      : null;
     return {
       ...cloneJson(run),
       id,
@@ -352,6 +368,7 @@ export function normalizePaddockStore(input) {
       products,
       allocations,
       ...(selectedPaddocks ? { selectedPaddocks } : {}),
+      ...(Object.hasOwn(run, "propertySnapshot") ? { propertySnapshot } : {}),
     };
   });
   const activeRunId = nullableText(input.activeRunId);
@@ -1054,6 +1071,7 @@ function normalizedBackupMetadata(options, datasets) {
       paddockLibrary: datasetVersion(datasets.paddockLibrary, PADDOCK_LIBRARY_VERSION),
       workNotes: datasetVersion(datasets.workNotes, WORK_NOTES_VERSION),
       profile: PROFILE_VERSION,
+      ...(datasets.propertySettings ? { propertySettings: PROPERTY_SETTINGS_VERSION } : {}),
       weatherSettings: WEATHER_SETTINGS_VERSION,
       servicing4830: datasetVersion(datasets.servicing4830, SERVICING_STORE_VERSION),
     },
@@ -1087,9 +1105,15 @@ export function combinedBackupExport(storage = globalThis.localStorage, now = ne
       return normalizeWorkNotesData(normalizeWorkNotes(cloneJson(value)));
     }),
     profile: parseOrNull(PROFILE_KEY, normalizeProfileData),
+    propertySettings: parseOrNull(PROPERTY_SETTINGS_KEY, (value) => {
+      const inspected = inspectPropertySettings(JSON.stringify(value));
+      if (inspected.state !== "ready") throw new TypeError("Property settings are not in a verified canonical form.");
+      return inspected.data;
+    }),
     weatherSettings: parseOrNull(WEATHER_SETTINGS_KEY, normalizeWeatherSettingsData),
     servicing4830: parseOrNull(SERVICING_KEY, normalizeServicingStore),
   };
+  if (datasets.propertySettings === null) datasets.propertySettings = normalizePropertySettings({});
   const payload = {
     format: "pallathorpe-combined-backup",
     version: COMBINED_BACKUP_VERSION,
@@ -1121,6 +1145,12 @@ const RESTORE_DATASETS = Object.freeze([
     key: SERVICING_KEY,
     version: SERVICING_STORE_VERSION,
     introducedInBackup: 4,
+  },
+  {
+    name: "propertySettings",
+    key: PROPERTY_SETTINGS_KEY,
+    version: PROPERTY_SETTINGS_VERSION,
+    introducedInBackup: 5,
   },
 ]);
 
@@ -1185,6 +1215,9 @@ export function prepareCombinedBackupRestore(input, options = {}) {
   if (backupVersion >= 4 && !Object.hasOwn(payload, "servicing4830")) {
     throw new TypeError("Combined backup v4 is missing its 4830 Servicing dataset.");
   }
+  if (backupVersion >= 5 && !Object.hasOwn(payload, "propertySettings")) {
+    throw new TypeError("Combined backup v5 is missing its property settings dataset.");
+  }
 
   const normalizeWorkNotes = options.normalizeWorkNotes ?? normalizeWorkNotesData;
   if (typeof normalizeWorkNotes !== "function") {
@@ -1232,6 +1265,10 @@ export function prepareCombinedBackupRestore(input, options = {}) {
         datasets.servicing4830 = emptyServicingStore();
         continue;
       }
+      if (dataset.name === "propertySettings") {
+        datasets.propertySettings = null;
+        continue;
+      }
       datasets[dataset.name] = null;
       continue;
     }
@@ -1246,6 +1283,9 @@ export function prepareCombinedBackupRestore(input, options = {}) {
       datasets.profile = normalizeProfileData(value);
     } else if (dataset.name === "servicing4830") {
       datasets.servicing4830 = normalizeServicingStore(value);
+    } else if (dataset.name === "propertySettings") {
+      if (inspectPropertySettings(JSON.stringify(value)).state !== "ready") throw new TypeError("Combined backup property settings are invalid.");
+      datasets.propertySettings = normalizePropertySettings(value);
     } else {
       datasets.weatherSettings = normalizeWeatherSettingsData(value);
     }

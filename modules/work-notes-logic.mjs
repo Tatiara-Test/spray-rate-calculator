@@ -4,6 +4,7 @@ export const APP_VERSION = 1;
 export const STORAGE_KEY = WORK_NOTES_KEY;
 export const ANCHOR_DATE = "2026-07-27";
 export const DAY_MS = 86_400_000;
+export const PERIODS = Object.freeze(["week", "fortnight", "month"]);
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FOLLOW_UP_STATES = new Set(["open", "done"]);
@@ -44,9 +45,60 @@ export function fortnightStartFor(dateIso, anchorIso = ANCHOR_DATE) {
   return addDays(anchorIso, Math.floor(offset / 14) * 14);
 }
 
+export function normalizePeriod(period) {
+  return PERIODS.includes(period) ? period : "fortnight";
+}
+
+export function weekStartFor(dateIso) {
+  if (!isIsoDate(dateIso)) throw new TypeError("A valid date is required.");
+  const weekday = new Date(`${dateIso}T00:00:00Z`).getUTCDay();
+  return addDays(dateIso, weekday === 0 ? -6 : 1 - weekday);
+}
+
+export function monthStartFor(dateIso) {
+  if (!isIsoDate(dateIso)) throw new TypeError("A valid date is required.");
+  return `${dateIso.slice(0, 7)}-01`;
+}
+
+export function periodStartFor(dateIso, period = "fortnight", anchorIso = ANCHOR_DATE) {
+  const normalized = normalizePeriod(period);
+  if (normalized === "week") return weekStartFor(dateIso);
+  if (normalized === "month") return monthStartFor(dateIso);
+  return fortnightStartFor(dateIso, anchorIso);
+}
+
+export function periodEndFor(startIso, period = "fortnight") {
+  const normalized = normalizePeriod(period);
+  if (normalized === "month") {
+    const nextMonth = new Date(`${startIso.slice(0, 7)}-01T00:00:00Z`);
+    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+    nextMonth.setUTCDate(nextMonth.getUTCDate() - 1);
+    return nextMonth.toISOString().slice(0, 10);
+  }
+  return addDays(startIso, normalized === "week" ? 6 : 13);
+}
+
+export function getPeriodDates(startIso, period = "fortnight") {
+  if (!isIsoDate(startIso)) throw new TypeError("A valid period start is required.");
+  const normalized = normalizePeriod(period);
+  const endIso = periodEndFor(startIso, normalized);
+  const count = daysBetween(startIso, endIso) + 1;
+  return Array.from({ length: count }, (_, index) => addDays(startIso, index));
+}
+
+export function getPeriodRange(dateIso, period = "fortnight", anchorIso = ANCHOR_DATE) {
+  const startIso = periodStartFor(dateIso, period, anchorIso);
+  return { period: normalizePeriod(period), startIso, endIso: periodEndFor(startIso, period) };
+}
+
+export function periodLabel(period, startIso, endIso = periodEndFor(startIso, period)) {
+  const normalized = normalizePeriod(period);
+  const name = normalized === "week" ? "Week" : normalized === "month" ? "Month" : "Fortnight";
+  return `${name}: ${formatLongDate(startIso)} to ${formatLongDate(endIso)}`;
+}
+
 export function getFortnightDates(startIso) {
-  if (!isIsoDate(startIso)) throw new TypeError("A valid fortnight start is required.");
-  return Array.from({ length: 14 }, (_, index) => addDays(startIso, index));
+  return getPeriodDates(startIso, "fortnight");
 }
 
 export function createEmptyData() {
@@ -388,11 +440,25 @@ export function formatShortDate(dateIso, locale = "en-AU") {
 }
 
 export function fortnightTextExport(data, startIso) {
-  const dates = getFortnightDates(startIso);
+  const exported = periodTextExport(data, startIso, "fortnight");
+  const endIso = periodEndFor(startIso, "fortnight");
+  return { ...exported, filename: `pallathorpe-work-notes_${startIso}_to_${endIso}.txt` };
+}
+
+export function periodTextExport(data, startIso, period = "fortnight", property = {}) {
+  const normalized = normalizePeriod(period);
+  const dates = getPeriodDates(startIso, normalized);
   const endIso = dates.at(-1);
+  const businessName = typeof property.businessName === "string" && property.businessName.trim()
+    ? property.businessName.trim()
+    : "Pallathorpe Enterprises";
+  const shortName = typeof property.shortName === "string" && property.shortName.trim()
+    ? property.shortName.trim()
+    : "Pallathorpe";
   const lines = [
-    "Pallathorpe Work Notes",
-    `Fortnight: ${formatLongDate(startIso)} to ${formatLongDate(endIso)}`,
+    `${shortName} Work Notes`,
+    businessName,
+    periodLabel(normalized, startIso, endIso),
     "",
   ];
   for (const date of dates) {
@@ -401,7 +467,7 @@ export function fortnightTextExport(data, startIso) {
     lines.push("");
   }
   return {
-    filename: `pallathorpe-work-notes_${startIso}_to_${endIso}.txt`,
+    filename: `${shortName.toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "pallathorpe"}-work-notes-${normalized}_${startIso}_to_${endIso}.txt`,
     text: `${lines.join("\n").trimEnd()}\n`,
   };
 }

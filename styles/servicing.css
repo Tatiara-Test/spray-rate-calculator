@@ -1,10 +1,10 @@
 :host {
-  --service-page: #edf1e9;
-  --service-card: #ffffff;
-  --service-text: #18231b;
-  --service-muted: #5c685f;
-  --service-line: #d5ddd4;
-  --service-green: #236b38;
+  --service-page: var(--shell-page, #edf1e9);
+  --service-card: var(--shell-card, #ffffff);
+  --service-text: var(--shell-text, #18231b);
+  --service-muted: var(--shell-muted, #5c685f);
+  --service-line: var(--shell-line, #d5ddd4);
+  --service-green: var(--shell-green, #236b38);
   --service-green-dark: #174a27;
   --service-yellow: #f2c94c;
   color: var(--service-text);
@@ -23,6 +23,7 @@ p, h1, h2, h3, h4, dd { overflow-wrap: anywhere; }
 .servicing-root { background: var(--service-page); min-height: calc(100vh - var(--combined-nav-offset, 0px)); padding: 18px 13px max(34px, env(safe-area-inset-bottom)); }
 .servicing-shell { margin: 0 auto; max-width: 760px; }
 .servicing-header { align-items: center; display: flex; gap: 12px; margin: 2px 2px 18px; }
+.servicing-header .farmer-assistant-emblem { border-radius: 10px; height: 44px; object-fit: contain; width: 44px; }
 .servicing-header img { flex: 0 0 auto; height: 54px; object-fit: contain; width: 54px; }
 .servicing-header div { min-width: 0; }
 .servicing-header p, .eyebrow { color: var(--service-green); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.045em; margin: 0 0 3px; text-transform: uppercase; }
@@ -157,20 +158,4 @@ dialog::backdrop { background: rgba(7, 15, 9, 0.68); }
   .history-summary-action button { justify-self: end; }
   .sticky-actions > *, .dialog-actions > *, .history-actions > * { flex: 1 1 150px; }
   .servicing-intro, .panel-heading { align-items: start; }
-}
-
-@media (prefers-color-scheme: dark) {
-  :host {
-    --service-page: #101813;
-    --service-card: #18231b;
-    --service-text: #f1f5f0;
-    --service-muted: #b2bdb4;
-    --service-line: #3a493d;
-    --service-green: #65b879;
-    --service-green-dark: #4da465;
-  }
-  .status-chip { background: #493f18; color: #f2db78; }
-  .ready-chip { background: #243f2b; color: #a9dfb5; }
-  .ordinary-record-note { background: #342f1d; color: #e5dbad; }
-  .form-error { background: #41231f; color: #ffb8ae; }
 }

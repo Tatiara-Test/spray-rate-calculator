@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-";
 const LEGACY_CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-legacy-";
-const CACHE_NAME = `${CACHE_PREFIX}v24-2026-08-25-direct-share-dialog-final`;
+const CACHE_NAME = `${CACHE_PREFIX}v29-2026-08-26-prepublish-goal-loop-fix`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./config.mjs",
   "./manifest.webmanifest",
   "./brand-mark.png",
+  "./farmers-assistant-emblem.png",
   "./assets/pallathorpe-app-guide.pdf",
   "./robots.txt",
   "./styles/shell.css",
@@ -26,6 +27,7 @@ const APP_SHELL = [
   "./modules/paddock-runs.mjs",
   "./modules/pdf-lib-loader.mjs",
   "./modules/share-files.mjs",
+  "./modules/property-settings.mjs",
   "./modules/spray-template.mjs",
   "./modules/spray-app.mjs",
   "./modules/settings-template.mjs",
@@ -52,7 +54,8 @@ const APP_SHELL = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  const freshShellRequests = APP_SHELL.map((asset) => new Request(asset, { cache: "reload" }));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(freshShellRequests)));
 });
 self.addEventListener("activate", (event) => {
   event.waitUntil(

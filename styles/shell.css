@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --shell-page: #edf1e9;
   --shell-card: #ffffff;
   --shell-text: #18231b;
@@ -7,7 +7,9 @@
   --shell-line: #d5ddd4;
   --shell-green: #236b38;
 }
-
+:root[data-theme="fieldbook"] { --shell-page: #f0f2df; --shell-card: #fffdf4; --shell-text: #243019; --shell-muted: #5c684c; --shell-green: #59731f; }
+:root[data-theme="mallee"] { --shell-page: #f4ece2; --shell-card: #fffaf3; --shell-text: #34251c; --shell-muted: #6d5748; --shell-green: #9a5a24; }
+:root[data-theme="bluegum"] { --shell-page: #e7f1f4; --shell-card: #f5fbfc; --shell-text: #162d36; --shell-muted: #536a72; --shell-green: #17657a; }
 * { box-sizing: border-box; }
 html { background: var(--shell-page); }
 body {
@@ -57,6 +59,7 @@ button { font: inherit; }
 .home-shell { margin: 0 auto; max-width: 720px; }
 .home-header { align-items: center; display: flex; gap: 13px; margin: 6px 2px 24px; }
 .home-header img { flex: 0 0 auto; height: 64px; object-fit: contain; width: 64px; }
+.home-header .farmer-assistant-emblem { border-radius: 12px; height: 56px; width: 56px; }
 .home-header p {
   color: var(--shell-green);
   font-size: 0.78rem;
@@ -144,7 +147,7 @@ button { font: inherit; }
   display: inline-flex;
   font-weight: 800;
   gap: 7px;
-  min-height: 42px;
+  min-height: 44px;
   padding: 8px 11px;
 }
 .section-navigation button span:first-child { font-size: 1.2rem; line-height: 1; }
@@ -197,17 +200,4 @@ button { font: inherit; }
   .home-card-grid { grid-template-columns: repeat(2, 1fr); }
   .home-card { align-content: start; grid-template-columns: 48px 1fr; min-height: 176px; }
   .home-card b { display: none; }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --shell-page: #101813;
-    --shell-card: #18231b;
-    --shell-text: #f1f5f0;
-    --shell-muted: #b2bdb4;
-    --shell-line: #3a493d;
-    --shell-green: #65b879;
-  }
-  .continue-card { background: #3b351d; border-color: #8c7626; color: #fff7d8; }
-  .continue-card > span, .continue-card small { color: #ded2a1; }
 }

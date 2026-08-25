@@ -17,7 +17,7 @@ const template = `
     <main class="weather-shell">
       <header class="weather-header">
         <img src="./brand-mark.png" alt="" width="58" height="58" />
-        <div><p>Pallathorpe</p><h1>Weather Shortcuts</h1></div>
+        <div><p id="weather-farm-name">Pallathorpe</p><h1>Weather Shortcuts</h1></div>
       </header>
 
       <section class="shortcut-intro">

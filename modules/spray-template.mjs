@@ -2,7 +2,7 @@ export const SPRAY_TEMPLATE = `
   <link rel="stylesheet" href="./styles/spray.css" />
   <div class="spray-root">
     <main class="app-shell">
-      <header class="brand-header"><img class="brand-mark" src="./brand-mark.png" alt="" width="64" height="64" /><div><p class="farm-name">Pallathorpe Enterprises</p><h1>Spray Rate Calculator</h1></div></header>
+      <header class="brand-header"><img class="brand-mark" src="./brand-mark.png" alt="" width="64" height="64" /><img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="48" height="48" /><div><p id="spray-farm-name" class="farm-name">Pallathorpe Enterprises</p><h1>Spray Rate Calculator</h1></div></header>
       <nav class="view-switch" aria-label="Spray Operations sections" role="tablist"><button id="spray-calculator-tab" class="selected" type="button" data-view-button="calculator" role="tab" aria-selected="true" aria-controls="calculator-view">Calculator</button><button id="spray-run-tab" type="button" data-view-button="run" role="tab" aria-selected="false" aria-controls="run-view">Buffers</button><button id="spray-paddocks-tab" type="button" data-view-button="paddocks" role="tab" aria-selected="false" aria-controls="paddocks-view">Paddocks</button></nav>
       <section class="storage-warning storage-lock-warning" id="storage-lock-warning" role="alert" tabindex="-1" hidden>
         <div><strong id="storage-lock-title">Paddock records protected</strong><p id="storage-lock-message"></p></div>

@@ -76,8 +76,9 @@ export async function shareServicingRecord({
   FileCtor = globalThis.File,
   generatedAt = new Date().toISOString(),
   buildPdf = buildServicingPdf,
+  propertySettings = null,
 } = {}) {
-  const descriptor = servicingExportDescriptor(record, generatedAt);
+  const descriptor = servicingExportDescriptor(record, generatedAt, propertySettings);
   const bytes = await buildPdf(record, descriptor);
   const pdfBlob = new Blob([bytes], { type: "application/pdf" });
   const files = makePdfFile(pdfBlob, descriptor.filename, FileCtor);
@@ -417,6 +418,7 @@ export function mountServicingApp(host, options = {}) {
         navigatorLike: options.navigatorLike ?? globalThis.navigator,
         FileCtor: options.FileCtor ?? globalThis.File,
         generatedAt: options.now?.().toISOString?.() ?? new Date().toISOString(),
+        propertySettings: options.getPropertySettings?.() ?? null,
       });
       if (result.mode === "shared") {
         showToast("PDF handed to your phone for sharing.");

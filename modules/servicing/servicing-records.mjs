@@ -2,6 +2,7 @@ import {
   SERVICE_DEFINITION_4830,
   serviceTasksForIntervalGroups,
 } from "./4830-service-definition.mjs";
+import { normalizePropertyIdentitySnapshot, propertyIdentitySnapshot } from "../property-settings.mjs";
 
 export const SERVICING_RECORD_VERSION = 1;
 export const TASK_STATES = Object.freeze(["not_started", "done", "not_applicable", "deferred"]);
@@ -134,7 +135,18 @@ export function normalizeServicingRecord(input) {
     "version", "recordId", "seriesId", "revision", "supersedesRecordId", "amendmentReason",
     "machine", "serviceDate", "engineHours", "operator", "selectedIntervalGroups", "definition",
     "taskSnapshot", "taskResults", "overallNotes", "lifecycle", "outcome", "createdAt", "updatedAt", "finalisedAt",
-  ], "Servicing record");
+  ].concat(Object.hasOwn(input, "propertySnapshot") ? ["propertySnapshot"] : []), "Servicing record");
+  const propertySnapshot = Object.hasOwn(input, "propertySnapshot")
+    ? normalizePropertyIdentitySnapshot(input.propertySnapshot)
+    : null;
+  if (Object.hasOwn(input, "propertySnapshot")) {
+    if (Object.keys(input.propertySnapshot).sort().join("|") !== "businessName|emblem|shortName"
+      || input.propertySnapshot.businessName !== propertySnapshot.businessName
+      || input.propertySnapshot.shortName !== propertySnapshot.shortName
+      || Object.keys(input.propertySnapshot.emblem || {}).sort().join("|") !== "id|version") {
+      throw new TypeError("Servicing property identity snapshot is not canonical.");
+    }
+  }
   if (input.version !== SERVICING_RECORD_VERSION) throw new TypeError("Servicing record has an unsupported version.");
   const recordId = text(input.recordId);
   const seriesId = text(input.seriesId);
@@ -214,7 +226,10 @@ export function normalizeServicingRecord(input) {
   } else if (!text(input.supersedesRecordId) || !text(input.amendmentReason)) {
     throw new TypeError("Servicing amendment requires its prior record and reason.");
   }
-  return clone(input);
+  return {
+    ...clone(input),
+    ...(Object.hasOwn(input, "propertySnapshot") ? { propertySnapshot } : {}),
+  };
 }
 
 export function createServicingDraft({
@@ -339,7 +354,7 @@ export function assessServicingFinalisation(record, now = new Date().toISOString
   });
 }
 
-export function finaliseServicingRecord(record, now = new Date().toISOString()) {
+export function finaliseServicingRecord(record, now = new Date().toISOString(), options = {}) {
   const value = normalizeServicingRecord(record);
   if (value.lifecycle !== "draft") throw new Error("This servicing revision is already finalised.");
   isoTimestamp(now, "Servicing finalised time");
@@ -358,6 +373,9 @@ export function finaliseServicingRecord(record, now = new Date().toISOString()) 
   value.lifecycle = outcome === "all_done" ? "finalised" : "finalised_with_outstanding_items";
   value.finalisedAt = now;
   value.updatedAt = now;
+  value.propertySnapshot = Object.hasOwn(options, "propertySnapshot")
+    ? (options.propertySnapshot ? normalizePropertyIdentitySnapshot(options.propertySnapshot) : propertyIdentitySnapshot())
+    : (value.propertySnapshot ? normalizePropertyIdentitySnapshot(value.propertySnapshot) : propertyIdentitySnapshot());
   return normalizeServicingRecord(value);
 }
 

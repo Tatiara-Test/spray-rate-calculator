@@ -1,6 +1,7 @@
 import { mountSprayApp } from "./modules/spray-app.mjs";
-import { migrateLegacyData } from "./modules/storage.mjs";
+import { migrateLegacyData, PROPERTY_SETTINGS_KEY } from "./modules/storage.mjs";
 import { mountWorkNotesApp } from "./modules/work-notes-app.mjs";
+import { loadPropertySettings } from "./modules/property-settings.mjs";
 import {
   APP_CHANNEL,
   ENABLE_LEGACY_MIGRATION,
@@ -30,6 +31,12 @@ const migrationNotice = document.querySelector("#migration-notice");
 const migrationProblems = Object.entries(migration).filter(([, result]) =>
   ["invalid", "error"].includes(result.status),
 );
+function applyPropertyTheme(settings) {
+  document.documentElement.dataset.theme = settings?.theme || "pallathorpe";
+}
+let propertySettings = { businessName: "Pallathorpe Enterprises", shortName: "Pallathorpe", defaultPeriod: "fortnight", theme: "pallathorpe" };
+try { propertySettings = loadPropertySettings(globalThis.localStorage, PROPERTY_SETTINGS_KEY); } catch { /* protected settings remain at defaults */ }
+applyPropertyTheme(propertySettings);
 if (migrationProblems.length) {
   migrationNotice.textContent = "Some older device records could not be copied. The originals were left unchanged; use Backup / Restore to review them.";
   migrationNotice.hidden = false;
@@ -46,6 +53,18 @@ const settingsHost = document.querySelector("#settings-host");
 const servicingHost = document.querySelector("#servicing-host");
 let servicing = { refresh: () => {}, hasUnsavedChanges: () => false };
 const workNotesHost = document.querySelector("#work-notes-host");
+function applyPropertyIdentity(settings) {
+  const fullName = settings?.businessName || "Pallathorpe Enterprises";
+  const shortName = settings?.shortName || fullName;
+  document.querySelector("#home-farm-name")?.replaceChildren(fullName);
+  const setShadowText = (host, selector, value) => host?.shadowRoot?.querySelector(selector)?.replaceChildren(value);
+  setShadowText(sprayHost, "#spray-farm-name", fullName);
+  setShadowText(workNotesHost, "#work-notes-farm-name", shortName);
+  setShadowText(weatherHost, "#weather-farm-name", shortName);
+  setShadowText(settingsHost, "#settings-farm-name", fullName);
+  setShadowText(servicingHost, "#servicing-farm-name", fullName);
+}
+applyPropertyIdentity(propertySettings);
 const workNotes = mountWorkNotesApp(workNotesHost, {
   hasExternalUnsavedChanges: () =>
     Boolean(
@@ -60,6 +79,7 @@ const workNotes = mountWorkNotesApp(workNotesHost, {
     channel: APP_CHANNEL,
   },
 });
+applyPropertyIdentity(propertySettings);
 const navigationKey = navigationStorageKey(APP_CHANNEL);
 let navigation = loadNavigation(globalThis.localStorage, navigationKey);
 let currentRoute = { section: "home", tab: null };
@@ -76,6 +96,7 @@ function ensureWeatherMounted() {
   weatherMountPromise = import("./modules/weather/weather-app.mjs")
     .then(({ mountWeatherApp }) => {
       weather = mountWeatherApp(weatherHost);
+      applyPropertyIdentity(propertySettings);
       weather.refresh();
       return weather;
     })
@@ -105,7 +126,9 @@ function ensureSettingsMounted() {
       settings = mountSettingsApp(settingsHost, {
         onLibraryChange: () => spray.refreshPaddockLibrary?.(),
         hasExternalUnsavedLibraryChanges: () => spray.hasUnsavedLibraryChanges?.() === true,
+        onPropertyChange: (next) => { propertySettings = next; applyPropertyTheme(next); applyPropertyIdentity(next); workNotes.refreshPropertySettings?.(next); spray.refresh?.(); servicing.refresh?.(); },
       });
+      applyPropertyIdentity(propertySettings);
       settings.refresh();
       return settings;
     })
@@ -136,7 +159,8 @@ function ensureServicingMounted() {
   ])
     .then(([{ mountServicingApp }, { createServicingAdapter }]) => {
       const adapter = createServicingAdapter();
-      servicing = mountServicingApp(servicingHost, { adapter });
+      servicing = mountServicingApp(servicingHost, { adapter, getPropertySettings: () => propertySettings });
+      applyPropertyIdentity(propertySettings);
       servicing.refresh();
       return servicing;
     })

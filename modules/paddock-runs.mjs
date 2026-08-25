@@ -1,3 +1,5 @@
+import { normalizePropertyIdentitySnapshot } from "./property-settings.mjs";
+
 export const SPRAY_METHODS = Object.freeze(["Broadacre", "Camera"]);
 export const CAMERA_CAPABLE_MACHINES = Object.freeze(["412R", "Hayes boom"]);
 
@@ -109,6 +111,9 @@ function cloneRun(run) {
   if (Object.hasOwn(run, "selectedPaddocks")) {
     cloned.selectedPaddocks = cloneSelectedPaddocks(run.selectedPaddocks);
   }
+  if (Object.hasOwn(run, "propertySnapshot")) {
+    cloned.propertySnapshot = normalizePropertyIdentitySnapshot(run.propertySnapshot);
+  }
   return cloned;
 }
 
@@ -139,6 +144,7 @@ function assertRun(run) {
   const selectedPaddocks = Object.hasOwn(run, "selectedPaddocks")
     ? cloneSelectedPaddocks(run.selectedPaddocks)
     : null;
+  if (Object.hasOwn(run, "propertySnapshot")) normalizePropertyIdentitySnapshot(run.propertySnapshot);
   if (!Array.isArray(run.allocations)) throw new TypeError("Buffer allocations must be an array.");
 
   let before = Number(run.controllerStartLitres);
@@ -265,6 +271,9 @@ export function createPaddockRun(input = {}) {
   if (input.selectedPaddocks !== undefined) {
     run.selectedPaddocks = cloneSelectedPaddocks(input.selectedPaddocks);
   }
+  if (Object.hasOwn(input, "propertySnapshot")) {
+    run.propertySnapshot = normalizePropertyIdentitySnapshot(input.propertySnapshot);
+  }
   return run;
 }
 
@@ -372,6 +381,9 @@ export function materializeRunAllocations(run) {
       hectares: run.sprayMethod === "Broadacre" ? litresUsed / Number(run.sprayRate) : 0,
       products,
     };
+    if (Object.hasOwn(run, "propertySnapshot")) {
+      materialized.propertySnapshot = normalizePropertyIdentitySnapshot(run.propertySnapshot);
+    }
     if (Object.hasOwn(run, "selectedPaddocks")) {
       materialized.selectedPaddocks = cloneSelectedPaddocks(run.selectedPaddocks);
     }

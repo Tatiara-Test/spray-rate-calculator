@@ -1,4 +1,11 @@
 import { SETTINGS_TEMPLATE } from "./settings-template.mjs";
+import {
+  inspectPropertySettings,
+  loadPropertySettings,
+  normalizePropertySettings,
+  persistPropertySettings,
+  PROPERTY_SETTINGS_DEFAULTS,
+} from "./property-settings.mjs";
 import { handFilesToShareSheet } from "./share-files.mjs";
 import {
   PADDOCK_LIBRARY_VERSION,
@@ -7,6 +14,7 @@ import {
   inspectPaddockStore,
   inspectPaddockLibraryStore,
   persistPaddockLibrary,
+  PROPERTY_SETTINGS_KEY,
 } from "./storage.mjs";
 import {
   activeLibraryEntries,
@@ -78,6 +86,16 @@ export function mountSettingsApp(host, options = {}) {
   const appGuideDialogTitle = $("#app-guide-dialog-title");
   const closeAppGuide = $("#close-app-guide");
   const toast = $("#settings-toast");
+  const propertyForm = $("#property-settings-form");
+  const propertyBusinessName = $("#property-business-name");
+  const propertyShortName = $("#property-short-name");
+  const propertyDefaultPeriod = $("#property-default-period");
+  const propertyTheme = $("#property-theme");
+  const propertyError = $("#property-settings-error");
+  const propertyWarning = $("#property-settings-warning");
+  const propertyStatus = $("#property-storage-status");
+  const previewShort = $("#branding-preview-short");
+  const previewBusiness = $("#branding-preview-business");
 
   let library = emptyLibrary();
   let inspection = { status: "absent", raw: null, value: null };
@@ -88,6 +106,10 @@ export function mountSettingsApp(host, options = {}) {
   let toastTimer = null;
   let guideReturnFocus = null;
   let guideFallbackOpen = false;
+  let pendingAppGuide = null;
+  let property = { ...PROPERTY_SETTINGS_DEFAULTS, emblem: { ...PROPERTY_SETTINGS_DEFAULTS.emblem } };
+  let propertyInspection = { state: "absent", raw: null };
+  let propertyInitializationError = null;
 
   function hasExternalUnsavedLibraryChanges() {
     try {
@@ -167,6 +189,42 @@ export function mountSettingsApp(host, options = {}) {
 
   async function downloadOrShareAppGuide() {
     if (shareAppGuide.disabled) return;
+
+    if (pendingAppGuide) {
+      const prepared = pendingAppGuide;
+      shareAppGuide.disabled = true;
+      try {
+        if (!prepared.file) {
+          downloadBlob(APP_GUIDE_FILENAME, prepared.blob);
+          pendingAppGuide = null;
+          shareAppGuide.textContent = "Download / Share PDF";
+          setAppGuideStatus("The app guide PDF is ready in your downloads.");
+          return;
+        }
+
+        const shareResult = await handFilesToShareSheet({
+          navigatorLike: options.navigatorLike ?? globalThis.navigator,
+          files: [prepared.file],
+          title: "Pallathorpe Enterprises App guide",
+          text: "Offline app guide PDF copy.",
+        });
+        if (shareResult.mode === "cancelled") return;
+
+        pendingAppGuide = null;
+        shareAppGuide.textContent = "Download / Share PDF";
+        if (shareResult.mode === "shared") {
+          setAppGuideStatus("The app guide was handed to your phone for sharing.");
+          return;
+        }
+
+        downloadBlob(APP_GUIDE_FILENAME, prepared.blob);
+        setAppGuideStatus("Native sharing was unavailable. The app guide PDF is ready in your downloads.");
+      } finally {
+        shareAppGuide.disabled = false;
+      }
+      return;
+    }
+
     shareAppGuide.disabled = true;
     setAppGuideStatus("Preparing the offline app guide PDF...");
     try {
@@ -175,31 +233,16 @@ export function mountSettingsApp(host, options = {}) {
       const file = typeof FileConstructor === "function"
         ? new FileConstructor([blob], APP_GUIDE_FILENAME, { type: "application/pdf" })
         : null;
-      const shareResult = file
-        ? await handFilesToShareSheet({
-            navigatorLike: options.navigatorLike ?? globalThis.navigator,
-            files: [file],
-            title: "Pallathorpe Enterprises App guide",
-            text: "Offline app guide PDF copy.",
-          })
-        : { mode: "download", reason: "unsupported" };
-
-      if (shareResult.mode === "cancelled") {
-        setAppGuideStatus();
-        return;
-      }
-      if (shareResult.mode === "shared") {
-        setAppGuideStatus("The app guide was handed to your phone for sharing.");
-        return;
-      }
-
-      downloadBlob(APP_GUIDE_FILENAME, blob);
+      pendingAppGuide = { blob, file };
+      shareAppGuide.textContent = file ? "Share PDF" : "Download PDF";
       setAppGuideStatus(
-        shareResult.reason === "share-failed"
-          ? "Native sharing was unavailable. The app guide PDF is ready in your downloads."
-          : "The app guide PDF is ready in your downloads.",
+        file
+          ? "Copy ready. Tap Share PDF to open your phone’s share sheet."
+          : "Copy ready. Tap Download PDF to save it to this device.",
       );
     } catch {
+      pendingAppGuide = null;
+      shareAppGuide.textContent = "Download / Share PDF";
       setAppGuideStatus("The offline app guide PDF is unavailable. Reopen the app online to finish the current update, then try again.");
     } finally {
       shareAppGuide.disabled = false;
@@ -278,8 +321,67 @@ export function mountSettingsApp(host, options = {}) {
   }
 
   function renderAll() {
+    renderProperty();
     renderWarnings();
     renderLibrary();
+  }
+
+  function renderProperty() {
+    const locked = propertyInitializationError || ["corrupt", "future"].includes(propertyInspection.state);
+    propertyWarning.hidden = !locked;
+    propertyWarning.textContent = propertyInitializationError
+      ? "Property settings could not be read. Existing settings were not changed."
+      : propertyInspection.state === "future"
+        ? `This phone contains property settings version ${propertyInspection.version}; they are protected from overwrite.`
+        : propertyInspection.state === "corrupt"
+          ? "Property settings are unreadable and protected from overwrite."
+          : "";
+    for (const control of propertyForm.querySelectorAll("input, select, button")) control.disabled = Boolean(locked);
+    propertyBusinessName.value = property.businessName || "";
+    propertyShortName.value = property.shortName || "";
+    propertyDefaultPeriod.value = property.defaultPeriod || "fortnight";
+    propertyTheme.value = property.theme || "pallathorpe";
+    previewShort.textContent = property.shortName || property.businessName || "Pallathorpe";
+    previewBusiness.textContent = property.businessName || "Pallathorpe Enterprises";
+    propertyStatus.textContent = locked ? "Protected device data — editing locked" : "Saved on this phone only";
+  }
+
+  function renderLivePropertyPreview() {
+    previewShort.textContent = propertyShortName.value.trim() || propertyBusinessName.value.trim() || "Pallathorpe";
+    previewBusiness.textContent = propertyBusinessName.value.trim() || "Pallathorpe Enterprises";
+  }
+
+  function refreshProperty() {
+    propertyInitializationError = null;
+    try {
+      propertyInspection = inspectPropertySettings(globalThis.localStorage?.getItem?.(PROPERTY_SETTINGS_KEY));
+      if (propertyInspection.state === "ready" || propertyInspection.state === "absent") property = propertyInspection.data;
+    } catch (error) {
+      propertyInitializationError = error;
+      propertyInspection = { state: "corrupt", raw: null };
+    }
+  }
+
+  function submitPropertyForm(event) {
+    event.preventDefault();
+    propertyError.hidden = true;
+    if (propertyInitializationError || ["corrupt", "future"].includes(propertyInspection.state)) return;
+    try {
+      property = normalizePropertySettings({
+        businessName: propertyBusinessName.value,
+        shortName: propertyShortName.value,
+        defaultPeriod: propertyDefaultPeriod.value,
+        theme: propertyTheme.value,
+      });
+      persistPropertySettings(globalThis.localStorage, property, PROPERTY_SETTINGS_KEY);
+      propertyInspection = inspectPropertySettings(JSON.stringify(property));
+      renderProperty();
+      options.onPropertyChange?.(property);
+      showToast("Property settings saved.");
+    } catch (error) {
+      propertyError.textContent = error?.message || "Property settings could not be saved.";
+      propertyError.hidden = false;
+    }
   }
 
   function resetForm({ focus = false } = {}) {
@@ -491,7 +593,11 @@ export function mountSettingsApp(host, options = {}) {
     }
   });
   shareAppGuide.addEventListener("click", downloadOrShareAppGuide);
+  propertyForm.addEventListener("submit", submitPropertyForm);
+  propertyBusinessName.addEventListener("input", renderLivePropertyPreview);
+  propertyShortName.addEventListener("input", renderLivePropertyPreview);
 
+  refreshProperty();
   refresh();
 
   return {

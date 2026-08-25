@@ -1,4 +1,4 @@
-import { formatLongDate, getFortnightDates } from "./work-notes-logic.mjs";
+import { formatLongDate, getPeriodDates, normalizePeriod, periodEndFor, periodLabel } from "./work-notes-logic.mjs";
 import { loadPdfLib } from "./pdf-lib-loader.mjs";
 
 const PAGE_SIZE = Object.freeze([595.28, 841.89]);
@@ -17,14 +17,26 @@ function safePdfText(value) {
 export function workNotesExportDescriptor(
   startIso,
   generatedAt = new Date().toISOString(),
+  period = "fortnight",
+  property = {},
 ) {
-  const dates = getFortnightDates(startIso);
-  const endIso = dates.at(-1);
-  const base = `pallathorpe-work-notes_${startIso}_to_${endIso}`;
+  const normalizedPeriod = normalizePeriod(period);
+  const endIso = periodEndFor(startIso, normalizedPeriod);
+  const dates = getPeriodDates(startIso, normalizedPeriod);
+  const shortName = typeof property.shortName === "string" && property.shortName.trim() ? property.shortName.trim() : "Pallathorpe";
+  const safeName = shortName.toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "pallathorpe";
+  const base = `${safeName}-work-notes-${normalizedPeriod}_${startIso}_to_${endIso}`;
+  if (normalizedPeriod === "fortnight" && Object.keys(property).length === 0) {
+    const legacyBase = `pallathorpe-work-notes_${startIso}_to_${endIso}`;
+    return { startIso, endIso, generatedAt, filenames: { pdf: `${legacyBase}.pdf`, text: `${legacyBase}.txt` } };
+  }
   return {
     startIso,
     endIso,
+    period: normalizedPeriod,
     generatedAt,
+    businessName: typeof property.businessName === "string" && property.businessName.trim() ? property.businessName.trim() : "Pallathorpe Enterprises",
+    shortName,
     filenames: {
       pdf: `${base}.pdf`,
       text: `${base}.txt`,
@@ -33,13 +45,13 @@ export function workNotesExportDescriptor(
 }
 
 export function buildWorkNotesPdfContentLines(data, descriptor) {
-  const dates = getFortnightDates(descriptor.startIso);
+  const dates = getPeriodDates(descriptor.startIso, descriptor.period);
   const lines = [
-    { kind: "brand", text: "Pallathorpe Enterprises" },
+    { kind: "brand", text: descriptor.businessName || "Pallathorpe Enterprises" },
     { kind: "heading", text: "Work Notes" },
     {
       kind: "meta",
-      text: `Fortnight: ${formatLongDate(descriptor.startIso)} to ${formatLongDate(descriptor.endIso)}`,
+      text: periodLabel(descriptor.period, descriptor.startIso, descriptor.endIso),
     },
     { kind: "meta", text: `Generated: ${descriptor.generatedAt}` },
   ];
@@ -103,9 +115,10 @@ export async function buildWorkNotesPdf(
 
   const { PDFDocument, StandardFonts, rgb } = resolvedPdfLib;
   const document = await PDFDocument.create();
-  document.setTitle(`Pallathorpe Work Notes ${descriptor.startIso} to ${descriptor.endIso}`);
-  document.setAuthor("Pallathorpe Enterprises");
-  document.setSubject("Fortnightly work notes");
+  document.setTitle(`${descriptor.shortName || "Pallathorpe"} Work Notes ${descriptor.startIso} to ${descriptor.endIso}`);
+  document.setAuthor(descriptor.businessName || "Pallathorpe Enterprises");
+  document.setSubject(`${descriptor.period === "week" ? "Weekly" : descriptor.period === "month" ? "Monthly" : "Fortnightly"} work notes`);
+  const generatedDate = new Date(descriptor.generatedAt);
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
   let page = document.addPage(PAGE_SIZE);
@@ -176,6 +189,11 @@ export async function buildWorkNotesPdf(
       color: rgb(0.36, 0.41, 0.37),
     });
   });
+
+  if (!Number.isNaN(generatedDate.getTime())) {
+    document.setCreationDate(generatedDate);
+    document.setModificationDate(generatedDate);
+  }
 
   return document.save({ useObjectStreams: false });
 }

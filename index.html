@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#236b38" />
     <meta name="description" content="Offline spray calculations, paddock records and work notes for Pallathorpe Enterprises." />
-    <meta name="robots" content="noindex, nofollow" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./brand-mark.png" />
     <link rel="apple-touch-icon" href="./brand-mark.png" />
@@ -13,10 +13,7 @@
     <title>Tatiara Test | Pallathorpe Spray Rate Calculator</title>
   </head>
   <body>
-    <aside class="test-channel-banner" aria-label="Test version">
-      <strong>Tatiara Test</strong>
-      <span>Testing copy - records stay on this test address.</span>
-    </aside>
+    <aside class="test-channel-banner" aria-label="Test version"><strong>Tatiara Test</strong><span>Testing copy - records stay on this test address.</span></aside>
     <aside id="migration-notice" class="notice" hidden role="status"></aside>
     <aside id="update-banner" class="update-banner" hidden>
       <span><strong>New version ready</strong><small>Your current work will stay open until you choose to update.</small></span>
@@ -35,7 +32,8 @@
         <div class="home-shell">
           <header class="home-header">
             <img src="./brand-mark.png" alt="" width="72" height="72" />
-            <div><p>Pallathorpe Enterprises</p><h1 id="main-menu-heading">What would you like to do?</h1></div>
+            <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="72" height="72" />
+            <div><p id="home-farm-name">Pallathorpe Enterprises</p><h1 id="main-menu-heading">What would you like to do?</h1></div>
           </header>
           <button id="continue-button" class="continue-card" type="button">
             <span>Continue where you left off</span>
@@ -55,7 +53,7 @@
             </button>
             <button class="home-card" type="button" data-open-section="work-notes">
               <span class="home-card-icon" aria-hidden="true">✓</span>
-              <span><strong>Work Notes</strong><small>Write daily notes, review a fortnight and manage your to-do list.</small></span>
+              <span><strong>Work Notes</strong><small>Write daily notes, review a Week, Fortnight or Month and manage your to-do list.</small></span>
               <b aria-hidden="true">›</b>
             </button>
             <button class="home-card" type="button" data-open-section="servicing">
@@ -65,7 +63,7 @@
             </button>
             <button class="home-card" type="button" data-open-section="settings">
               <span class="home-card-icon" aria-hidden="true">⚙</span>
-              <span><strong>Settings</strong><small>Manage saved paddock names and total hectares.</small></span>
+              <span><strong>Settings</strong><small>Manage property details, appearance, paddocks and the App guide.</small></span>
               <b aria-hidden="true">›</b>
             </button>
           </div>

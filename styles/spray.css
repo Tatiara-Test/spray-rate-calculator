@@ -1,11 +1,11 @@
 :host {
-  --page: #f3f5ef;
-  --card: #ffffff;
+  --page: var(--shell-page, #f3f5ef);
+  --card: var(--shell-card, #ffffff);
   --card-muted: #f7f8f5;
-  --text: #18231b;
-  --muted: #5c685f;
-  --line: #d5ddd4;
-  --green: #236b38;
+  --text: var(--shell-text, #18231b);
+  --muted: var(--shell-muted, #5c685f);
+  --line: var(--shell-line, #d5ddd4);
+  --green: var(--shell-green, #236b38);
   --green-soft: #e4f1e7;
   --yellow: #f2c94c;
   --yellow-soft: #fff5cf;
@@ -17,6 +17,7 @@
 
 * { box-sizing: border-box; }
 :host { display: block; }
+.farmer-assistant-emblem { border-radius: 10px; height: 48px; object-fit: contain; width: 48px; }
 .spray-root {
   margin: 0;
   min-height: 100vh;
@@ -1079,28 +1080,6 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
   .storage-warning { align-items: stretch; flex-direction: column; }
   .storage-warning-actions { display: grid; grid-template-columns: 1fr; }
   .save-summary strong { font-size: 0.76rem; }
-}
-@media (prefers-color-scheme: dark) {
-  :host {
-    --page: #101813;
-    --card: #18231b;
-    --card-muted: #202d23;
-    --text: #f1f5f0;
-    --muted: #b2bdb4;
-    --line: #3a493d;
-    --green: #65b879;
-    --green-soft: #203d28;
-    --yellow: #e4bd45;
-    --yellow-soft: #423819;
-    --water: #e29a50;
-    --water-soft: #442f1d;
-    --danger: #ff8c82;
-    --shadow: 0 8px 26px rgba(0, 0, 0, 0.22);
-  }
-  .spray-root { background: radial-gradient(circle at top right, rgba(242, 201, 76, 0.08), transparent 28rem), var(--page); }
-  .quick-rates button.selected { background: #2f7543; border-color: var(--green); }
-  .view-switch { background: #101813; }
-  .save-record-button, .confirm-save-button, .empty-state button { background: #2f7543; }
 }
 @media (prefers-reduced-motion: no-preference) {
   button, input, select, .product-row { transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }

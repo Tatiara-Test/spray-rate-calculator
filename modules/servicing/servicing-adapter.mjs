@@ -11,6 +11,7 @@ import {
 import {
   SERVICING_COMPATIBILITY_KEY,
   SERVICING_KEY,
+  PROPERTY_SETTINGS_KEY,
   appendFinalisedServicingRecord,
   assertServicingWritesEnabled,
   emptyServicingStore,
@@ -19,6 +20,7 @@ import {
   persistServicingStore,
   upsertServicingDraft,
 } from "../storage.mjs";
+import { loadPropertySettings, propertyIdentitySnapshot } from "../property-settings.mjs";
 
 const COMMANDS = Object.freeze({
   createDraft: "create-draft",
@@ -211,7 +213,9 @@ export function createServicingAdapter({
         store = upsertServicingDraft(store, updateServicingTask(draft, command.taskId, patch, timestamp));
       } else if (command.type === COMMANDS.finaliseDraft) {
         if (!draft) throw new Error("There is no servicing draft to finalise.");
-        store = appendFinalisedServicingRecord(store, finaliseServicingRecord(draft, timestamp));
+        let propertySnapshot;
+        try { propertySnapshot = propertyIdentitySnapshot(loadPropertySettings(storage, PROPERTY_SETTINGS_KEY)); } catch { propertySnapshot = propertyIdentitySnapshot(); }
+        store = appendFinalisedServicingRecord(store, finaliseServicingRecord(draft, timestamp, { propertySnapshot }));
       } else if (command.type === COMMANDS.beginAmendment) {
         if (draft) throw new Error("Finalise the current servicing draft before starting an amendment.");
         const prior = findRecord(store, command.recordId);

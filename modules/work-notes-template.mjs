@@ -4,7 +4,8 @@ export const WORK_NOTES_TEMPLATE = `
     <div class="app-shell">
       <header class="brand-header">
         <img class="brand-mark" src="./brand-mark.png" alt="" width="56" height="56" />
-        <div class="brand-copy"><p class="farm-name">Pallathorpe</p><h1>Work Notes</h1></div>
+        <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="48" height="48" />
+        <div class="brand-copy"><p id="work-notes-farm-name" class="farm-name">Pallathorpe</p><h1>Work Notes</h1></div>
         <button id="install-button" class="quiet-button install-button" type="button" hidden>Install</button>
       </header>
       <main>
@@ -22,11 +23,11 @@ export const WORK_NOTES_TEMPLATE = `
         </section>
         <section class="period-card" aria-labelledby="period-label">
           <div class="period-nav">
-            <button id="previous-period" class="square-button" type="button" aria-label="Previous fortnight"><span aria-hidden="true">‹</span></button>
+            <button id="previous-period" class="square-button" type="button" aria-label="Previous reporting period"><span aria-hidden="true">‹</span></button>
             <div class="period-title"><p id="period-kicker">Current fortnight</p><h2 id="period-label">Loading dates…</h2></div>
-            <button id="next-period" class="square-button" type="button" aria-label="Next fortnight"><span aria-hidden="true">›</span></button>
+            <button id="next-period" class="square-button" type="button" aria-label="Next reporting period"><span aria-hidden="true">›</span></button>
           </div>
-          <div class="period-actions"><button id="return-current" class="secondary-button" type="button" hidden>Current fortnight</button><button id="open-today" class="primary-button" type="button">Open today’s note</button></div>
+          <div class="period-actions"><label class="period-picker"><span>View</span><select id="period-kind"><option value="week">Week</option><option value="fortnight" selected>Fortnight</option><option value="month">Month</option></select></label><button id="return-current" class="secondary-button" type="button" hidden>Current period</button><button id="open-today" class="primary-button" type="button">Open today’s note</button></div>
         </section>
         <aside id="due-attention" class="attention-card" aria-labelledby="attention-title" hidden>
           <div><p class="eyebrow">Needs attention</p><h2 id="attention-title">Due to-do items</h2></div><div id="attention-items"></div>
@@ -38,19 +39,19 @@ export const WORK_NOTES_TEMPLATE = `
           <button id="followups-tab" class="section-tab" type="button" role="tab" aria-selected="false" aria-controls="followups-section" data-section-target="followups">To-do list <span id="followup-count" class="tab-count" hidden>0</span></button>
         </nav>
         <section id="notes-section" class="app-section" role="tabpanel" aria-labelledby="notes-tab" data-section="notes">
-          <div class="section-intro"><div><p class="eyebrow">14-day wages period</p><h2>Daily notes</h2></div><div class="note-legend" aria-label="Note status legend"><span><i class="legend-dot today-dot"></i> Today</span><span><i class="legend-dot saved-dot"></i> Note</span><span><i class="legend-dot missing-dot"></i> Missing</span></div></div>
+          <div class="section-intro"><div><p class="eyebrow">Displayed reporting period</p><h2>Daily notes</h2></div><div class="note-legend" aria-label="Note status legend"><span><i class="legend-dot today-dot"></i> Today</span><span><i class="legend-dot saved-dot"></i> Note</span><span><i class="legend-dot missing-dot"></i> Missing</span></div></div>
           <div id="notes-weeks"></div>
         </section>
         <section id="summary-section" class="app-section" role="tabpanel" aria-labelledby="summary-tab" data-section="summary" hidden>
-          <div class="section-intro summary-section-intro"><div><p class="eyebrow">Ready for wages</p><h2>Fortnight summary</h2></div><div class="summary-export-actions"><button id="share-work-notes" class="primary-button compact-button" type="button">Share / Save Copy</button><button id="export-text" class="secondary-button compact-button" type="button">Export text</button></div></div>
+          <div class="section-intro summary-section-intro"><div><p class="eyebrow">Ready for wages</p><h2>Period summary</h2></div><div class="summary-export-actions"><button id="share-work-notes" class="primary-button compact-button" type="button">Share / Save Copy</button><button id="export-text" class="secondary-button compact-button" type="button">Export text</button></div></div>
           <section class="ai-summary-demo-card" aria-labelledby="ai-summary-title">
-            <div><span id="ai-summary-badge" class="ai-demo-badge">AI · SETUP NEEDED</span><h3 id="ai-summary-title">AI fortnight summary</h3><p id="ai-summary-copy">When securely connected, AI can draft a summary from only the displayed fortnight for you to review and copy.</p></div>
+            <div><span id="ai-summary-badge" class="ai-demo-badge">AI · FORTNIGHT ONLY</span><h3 id="ai-summary-title">AI fortnight summary</h3><p id="ai-summary-copy">AI summary generation is available only for the displayed Fortnight. Daily dictation remains available in every view.</p></div>
             <button id="ai-summary-action" class="secondary-button compact-button" type="button">Draft summary</button>
           </section>
           <p class="section-help">Copy one day at a time. A green tick stays until that note is edited.</p><div id="summary-list" class="summary-list"></div>
         </section>
         <section id="followups-section" class="app-section" role="tabpanel" aria-labelledby="followups-tab" data-section="followups" hidden>
-          <div class="section-intro"><div><p class="eyebrow">Across all fortnights</p><h2>To-do list</h2></div><button id="add-followup" class="primary-button compact-button" type="button">Add to-do</button></div>
+          <div class="section-intro"><div><p class="eyebrow">Across all Work Notes</p><h2>To-do list</h2></div><button id="add-followup" class="primary-button compact-button" type="button">Add to-do</button></div>
           <div id="open-followups"></div>
           <details id="completed-details" class="completed-panel"><summary>Completed history <span id="completed-count" class="summary-count">0</span></summary><div id="completed-followups"></div></details>
           <section class="data-card" aria-labelledby="data-title">

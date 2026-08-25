@@ -1,11 +1,11 @@
 :host {
-  --page: #f3f5ef;
-  --card: #ffffff;
+  --page: var(--shell-page, #f3f5ef);
+  --card: var(--shell-card, #ffffff);
   --card-muted: #f7f8f5;
-  --text: #18231b;
-  --muted: #5c685f;
-  --line: #d5ddd4;
-  --green: #236b38;
+  --text: var(--shell-text, #18231b);
+  --muted: var(--shell-muted, #5c685f);
+  --line: var(--shell-line, #d5ddd4);
+  --green: var(--shell-green, #236b38);
   --green-dark: #174a28;
   --green-soft: #e4f1e7;
   --yellow: #f2c94c;
@@ -41,6 +41,7 @@ input,
 textarea {
   font: inherit;
 }
+.farmer-assistant-emblem { border-radius: 10px; height: 44px; object-fit: contain; width: 44px; }
 
 button {
   cursor: pointer;

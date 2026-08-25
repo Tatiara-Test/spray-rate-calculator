@@ -7,6 +7,11 @@ import {
   createEmptyData,
   fortnightStartFor,
   fortnightTextExport,
+  getPeriodDates,
+  periodEndFor,
+  periodStartFor,
+  periodTextExport,
+  normalizePeriod,
   formatLongDate,
   formatShortDate,
   getFortnightDates,
@@ -17,12 +22,14 @@ import {
   sortOpenFollowUps,
   todayIso,
 } from "./work-notes-logic.mjs";
+import { loadPropertySettings } from "./property-settings.mjs";
 import { APP_CHANNEL } from "../config.mjs";
 import {
   combinedBackupExport,
   findLatestPreRestoreRecovery,
   prepareCombinedBackupRestore,
   restoreCombinedBackup,
+  PROPERTY_SETTINGS_KEY,
 } from "./storage.mjs";
 import { mountWorkNotesAi } from "./work-notes-ai.mjs";
 import {
@@ -61,9 +68,10 @@ const noteTextarea = $("#note-text");
 const restorePreviousButton = $("#restore-previous");
 const saveIndicator = $("#save-indicator");
 const today = todayIso();
-const currentFortnightStart = fortnightStartFor(today);
-
-let displayedStart = currentFortnightStart;
+let propertySettings;
+try { propertySettings = loadPropertySettings(globalThis.localStorage, PROPERTY_SETTINGS_KEY); } catch { propertySettings = { businessName: "Pallathorpe Enterprises", shortName: "Pallathorpe", defaultPeriod: "fortnight", theme: "pallathorpe" }; }
+let displayedPeriod = normalizePeriod(propertySettings.defaultPeriod);
+let displayedStart = periodStartFor(today, displayedPeriod);
 let activeSection = "notes";
 let editingDate = null;
 let editSessionCaptured = false;
@@ -232,17 +240,35 @@ function dayAndMonth(dateIso) {
 }
 
 function renderPeriod() {
-  const end = addDays(displayedStart, 13);
+  const end = periodEndFor(displayedStart, displayedPeriod);
   $("#period-label").textContent = rangeLabel(displayedStart, end);
-  const isCurrent = displayedStart === currentFortnightStart;
-  const direction = displayedStart < currentFortnightStart ? "Earlier fortnight" : "Future fortnight";
-  $("#period-kicker").textContent = isCurrent ? "Current fortnight" : direction;
+  const currentStart = periodStartFor(today, displayedPeriod);
+  const isCurrent = displayedStart === currentStart;
+  const periodName = displayedPeriod === "week" ? "week" : displayedPeriod === "month" ? "month" : "fortnight";
+  const direction = displayedStart < currentStart ? `Earlier ${periodName}` : `Future ${periodName}`;
+  $("#period-kicker").textContent = isCurrent ? `Current ${periodName}` : direction;
+  $("#previous-period").setAttribute("aria-label", `Previous ${periodName}`);
+  $("#next-period").setAttribute("aria-label", `Next ${periodName}`);
+  const selector = $("#period-kind");
+  if (selector) selector.value = displayedPeriod;
+  const aiSummaryAction = $("#ai-summary-action");
+  const aiSummaryCopy = $("#ai-summary-copy");
+  if (aiSummaryAction) {
+    const fortnightOnly = displayedPeriod === "fortnight";
+    aiSummaryAction.disabled = !fortnightOnly;
+    aiSummaryAction.setAttribute("aria-disabled", String(!fortnightOnly));
+    aiSummaryAction.title = fortnightOnly ? "Draft a summary for this fortnight" : "AI summary is available for Fortnight view only";
+    if (aiSummaryCopy) aiSummaryCopy.textContent = fortnightOnly
+      ? "AI can draft a summary from only the displayed Fortnight for you to review and copy."
+      : "AI summary generation is available only for the displayed Fortnight. Daily dictation remains available in every view.";
+  }
   $("#return-current").hidden = isCurrent;
 }
 
 function renderNotes() {
-  const dates = getFortnightDates(displayedStart);
-  const weeks = [dates.slice(0, 7), dates.slice(7, 14)];
+  const dates = getPeriodDates(displayedStart, displayedPeriod);
+  const weeks = [];
+  for (let index = 0; index < dates.length; index += 7) weeks.push(dates.slice(index, index + 7));
   $("#notes-weeks").innerHTML = weeks
     .map((week, weekIndex) => {
       const cards = week
@@ -296,7 +322,7 @@ function renderNotes() {
 }
 
 function renderSummary() {
-  $("#summary-list").innerHTML = getFortnightDates(displayedStart)
+  $("#summary-list").innerHTML = getPeriodDates(displayedStart, displayedPeriod)
     .map((date) => {
       const text = data.notes[date]?.text.trim() ?? "";
       const copied = data.copied[date] === true && Boolean(text);
@@ -440,6 +466,12 @@ function renderAll() {
   refreshPreviousStateRecovery();
 }
 
+function refreshPropertySettings(next) {
+  if (!next || typeof next !== "object") return;
+  propertySettings = next;
+  $("#work-notes-farm-name").textContent = next.shortName || next.businessName || "Pallathorpe";
+}
+
 function activateSection(section) {
   if (!["notes", "summary", "followups"].includes(section)) return;
   activeSection = section;
@@ -539,8 +571,8 @@ async function prepareWorkNotesCopies() {
   if (workNotesShareInProgress) return;
   workNotesShareInProgress = true;
   updateWriteLockControls();
-  const textExport = fortnightTextExport(data, displayedStart);
-  const descriptor = workNotesExportDescriptor(displayedStart);
+  const textExport = periodTextExport(data, displayedStart, displayedPeriod, propertySettings);
+  const descriptor = workNotesExportDescriptor(displayedStart, new Date().toISOString(), displayedPeriod, propertySettings);
   try {
     const pdfBytes = await buildWorkNotesPdf(data, descriptor);
     const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
@@ -715,7 +747,7 @@ function applyAiNoteText({ date, text }) {
 }
 
 function reopenAiTargetNote(date) {
-  displayedStart = fortnightStartFor(date);
+  displayedStart = periodStartFor(date, displayedPeriod);
   requestSection("notes");
   renderAll();
   openNote(date);
@@ -820,7 +852,7 @@ document.addEventListener("click", async (event) => {
   const sourceButton = event.target.closest("[data-open-source]");
   if (sourceButton) {
     const sourceDate = sourceButton.dataset.openSource;
-    displayedStart = fortnightStartFor(sourceDate);
+    displayedStart = periodStartFor(sourceDate, displayedPeriod);
     requestSection("notes");
     renderAll();
     openNote(sourceDate);
@@ -828,22 +860,28 @@ document.addEventListener("click", async (event) => {
 });
 
 $("#previous-period").addEventListener("click", () => {
-  displayedStart = addDays(displayedStart, -14);
+  displayedStart = periodStartFor(addDays(displayedStart, -1), displayedPeriod);
   renderAll();
 });
 
 $("#next-period").addEventListener("click", () => {
-  displayedStart = addDays(displayedStart, 14);
+  displayedStart = periodStartFor(addDays(periodEndFor(displayedStart, displayedPeriod), 1), displayedPeriod);
+  renderAll();
+});
+
+$("#period-kind")?.addEventListener("change", (event) => {
+  displayedPeriod = normalizePeriod(event.target.value);
+  displayedStart = periodStartFor(today, displayedPeriod);
   renderAll();
 });
 
 $("#return-current").addEventListener("click", () => {
-  displayedStart = currentFortnightStart;
+  displayedStart = periodStartFor(today, displayedPeriod);
   renderAll();
 });
 
 $("#open-today").addEventListener("click", () => {
-  displayedStart = currentFortnightStart;
+  displayedStart = periodStartFor(today, displayedPeriod);
   requestSection("notes");
   renderAll();
   openNote(today);
@@ -861,6 +899,10 @@ $("#ai-create-followup-note").addEventListener("click", (event) => {
   openAiFromNote("followup", event.currentTarget);
 });
 $("#ai-summary-action").addEventListener("click", (event) => {
+  if (displayedPeriod !== "fortnight") {
+    showToast("AI summary is available for Fortnight view only.", true);
+    return;
+  }
   aiAssistant.open("summary", {
     returnToNote: false,
     ...buildAiFortnightContext(displayedStart, data.notes),
@@ -968,9 +1010,9 @@ $("#followup-form").addEventListener("submit", (event) => {
 });
 
 $("#export-text").addEventListener("click", () => {
-  const exported = fortnightTextExport(data, displayedStart);
+  const exported = periodTextExport(data, displayedStart, displayedPeriod, propertySettings);
   downloadText(exported.filename, exported.text, "text/plain;charset=utf-8");
-  showToast("Fortnight text exported");
+  showToast(`${displayedPeriod[0].toUpperCase()}${displayedPeriod.slice(1)} text exported`);
 });
 
 $("#share-work-notes").addEventListener("click", prepareWorkNotesCopies);
@@ -1076,6 +1118,12 @@ $("#combined-restore-file").addEventListener("change", async (event) => {
     const servicingSummary = hasServicing
       ? `${servicingDraftCount} servicing drafts and ${servicingRecordCount} finalised servicing revisions`
       : "current 4830 servicing records unchanged";
+    const hasPropertySettings = Object.hasOwn(prepared.datasets, "propertySettings");
+    const propertySettingsSummary = !hasPropertySettings
+      ? "current farm identity, default Work Notes period and colour theme unchanged"
+      : prepared.datasets.propertySettings === null
+        ? "farm identity, default Work Notes period and colour theme reset to built-in defaults"
+        : `farm identity “${prepared.datasets.propertySettings.businessName}”, default Work Notes period ${prepared.datasets.propertySettings.defaultPeriod}, and colour theme ${prepared.datasets.propertySettings.theme}`;
     const sourceWarnings = [];
     if (prepared.metadata?.channel && prepared.metadata.channel !== APP_CHANNEL) {
       sourceWarnings.push(
@@ -1106,7 +1154,7 @@ $("#combined-restore-file").addEventListener("change", async (event) => {
       ? `\n\nThis older backup contains ambiguous empty data for ${skippedLegacyLabels.join(", ")}. Those datasets will be skipped and their current device records left unchanged.`
       : "";
     const confirmed = window.confirm(
-      `Apply this combined backup: ${paddockSummary}; ${librarySummary}; ${workNotesSummary}; ${servicingSummary}? Operator profile and Weather settings are also replaced when included. A zero count clears that included section. A verified recovery snapshot is saved first, and the original legacy keys are never changed.${skippedLegacyWarning}${sourceWarning}`,
+      `Apply this combined backup: ${paddockSummary}; ${librarySummary}; ${workNotesSummary}; ${servicingSummary}; ${propertySettingsSummary}? Operator profile and Weather settings are also replaced when included. A zero count clears that included section. A verified recovery snapshot is saved first, and the original legacy keys are never changed.${skippedLegacyWarning}${sourceWarning}`,
     );
     if (!confirmed) return;
 
@@ -1167,7 +1215,7 @@ $("#restore-file").addEventListener("change", async (event) => {
     data = restored;
     pendingLockedRestore = Boolean(storageLock);
     const saved = persistData({ replaceLocked: pendingLockedRestore });
-    displayedStart = currentFortnightStart;
+    displayedStart = periodStartFor(today, displayedPeriod);
     renderAll();
     if (saved) showToast("Backup restored");
   } catch (error) {
@@ -1198,5 +1246,5 @@ window.addEventListener("appinstalled", () => {
 renderAll();
 activateSection(activeSection);
 host.activate = () => renderAll();
-return { renderAll, activateSection };
+return { renderAll, activateSection, refreshPropertySettings };
 }

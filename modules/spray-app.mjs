@@ -4,6 +4,7 @@ import {
   PADDOCK_LIBRARY_VERSION,
   PADDOCK_STORE_VERSION,
   PADDOCKS_KEY,
+  PROPERTY_SETTINGS_KEY,
   PROFILE_VERSION,
   ensurePaddockLibrarySeeded,
   inspectPaddockLibraryStore,
@@ -48,6 +49,7 @@ import {
   missingShareMetadata,
 } from "./paddock-export.mjs";
 import { handFilesToShareSheet } from "./share-files.mjs";
+import { loadPropertySettings, propertyIdentitySnapshot } from "./property-settings.mjs";
 import {
   cleanChemicalName,
   firstIncompleteProductRow,
@@ -67,6 +69,11 @@ const document = {
   createElement: (...args) => browserDocument.createElement(...args),
   body: root,
 };
+
+function currentPropertySnapshot() {
+  try { return propertyIdentitySnapshot(loadPropertySettings(globalThis.localStorage, PROPERTY_SETTINGS_KEY)); }
+  catch { return propertyIdentitySnapshot(); }
+}
 
 const STORAGE_KEY = PADDOCKS_KEY;
 const MAX_PADDOCKS = MAX_ACTIVE_PADDOCKS;
@@ -1117,6 +1124,7 @@ function buildTankRecord(calculation, existingTank = null, paddockSelection = nu
         calculation.sprayRate,
       )),
   };
+  record.propertySnapshot = existingTank?.propertySnapshot || currentPropertySnapshot();
   if (paddockSelection) record.paddockSelection = paddockSelection;
   return record;
 }
@@ -1494,6 +1502,7 @@ function startPaddockRun(event) {
         validatedControllerStart,
         calculation.sprayRate,
       )),
+      propertySnapshot: currentPropertySnapshot(),
     });
     store.runs.push(run);
     store.activeRunId = run.id;

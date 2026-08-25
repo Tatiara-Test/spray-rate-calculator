@@ -4,7 +4,8 @@ export const SETTINGS_TEMPLATE = `
     <main class="settings-shell">
       <header class="settings-header">
         <img src="./brand-mark.png" alt="" width="56" height="56" />
-        <div><p>Pallathorpe Enterprises</p><h1>Settings</h1></div>
+        <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="48" height="48" />
+        <div><p id="settings-farm-name">Pallathorpe Enterprises</p><h1>Settings</h1></div>
       </header>
 
       <section class="settings-warning settings-lock-warning" id="library-lock-warning" role="alert" tabindex="-1" hidden>
@@ -26,6 +27,26 @@ export const SETTINGS_TEMPLATE = `
           <button class="quiet-button" id="share-app-guide" type="button">Download / Share PDF</button>
         </div>
         <p class="app-guide-status" id="app-guide-status" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <section class="settings-card" aria-labelledby="property-settings-heading">
+        <div class="settings-card-heading">
+          <div><p class="eyebrow">Saved on this phone</p><h2 id="property-settings-heading">Property &amp; appearance</h2><p>Use your farm identity in compact headers and exported document headings. The Farmer’s Assistant identity and FH emblem stay fixed.</p></div>
+          <span id="property-storage-status">Saved on this phone only</span>
+        </div>
+        <p class="settings-warning settings-property-warning" id="property-settings-warning" role="alert" hidden></p>
+        <form id="property-settings-form" class="library-form">
+          <div class="library-form-grid">
+            <label><span>Farm or business name</span><input id="property-business-name" maxlength="120" required /></label>
+            <label><span>Short display name <small>optional</small></span><input id="property-short-name" maxlength="40" /></label>
+            <label><span>Default reporting period</span><select id="property-default-period"><option value="week">Week</option><option value="fortnight">Fortnight</option><option value="month">Month</option></select></label>
+            <label><span>Appearance theme</span><select id="property-theme"><option value="pallathorpe">Pallathorpe</option><option value="fieldbook">Fieldbook</option><option value="mallee">Mallee Earth</option><option value="bluegum">Blue Gum</option></select></label>
+          </div>
+          <p class="form-help">Themes are fixed accessible presets. No uploaded logo or custom theme is stored.</p>
+          <p class="form-error" id="property-settings-error" role="alert" hidden></p>
+          <div class="form-actions"><button class="primary-button" id="save-property-settings" type="submit">Save property settings</button></div>
+        </form>
+        <div class="branding-preview" id="branding-preview" aria-label="Document header preview"><p class="eyebrow">Live document-header preview</p><strong id="branding-preview-short">Pallathorpe</strong><span id="branding-preview-business">Pallathorpe Enterprises</span><small>Farmer’s Assistant · FH emblem fixed</small></div>
       </section>
 
       <section class="settings-card" aria-labelledby="downloaded-copies-heading">
@@ -75,7 +96,7 @@ export const SETTINGS_TEMPLATE = `
         <div class="app-guide-flow" aria-label="Main menu sections">
           <strong>Main menu</strong><span aria-hidden="true">&#8595;</span>
           <div><b>Spray Operations</b><small>Calculate, save and review tank or Buffer records.</small></div>
-          <div><b>Work Notes</b><small>Write notes, review the fortnight and manage the To-do list.</small></div>
+          <div><b>Work Notes</b><small>Write notes, review a Week, Fortnight or Month and manage the To-do list.</small></div>
           <div><b>Weather Shortcuts</b><small>Open saved weather websites or associated apps.</small></div>
           <div><b>4830 Servicing</b><small>Complete the checklist and prepare a service record.</small></div>
           <div><b>Settings</b><small>Manage the Paddock Library and open this guide.</small></div>
@@ -88,7 +109,7 @@ export const SETTINGS_TEMPLATE = `
         </article>
         <article class="app-guide-section">
           <h3>Work Notes and To-do list</h3>
-          <ol><li>Write or dictate a daily note.</li><li>Review Summary for the selected fortnight.</li><li>Keep outstanding work in the To-do list, then share or download a copy when ready.</li></ol>
+          <ol><li>Write or dictate a daily note.</li><li>Review Summary for the selected Week, Fortnight or Month.</li><li>Keep outstanding work in the To-do list, then share or download a copy when ready.</li></ol>
         </article>
         <article class="app-guide-section">
           <h3>Weather Shortcuts</h3>

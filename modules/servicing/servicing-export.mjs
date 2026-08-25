@@ -1,4 +1,5 @@
 import { loadPdfLib } from "../pdf-lib-loader.mjs";
+import { loadPropertySettings, propertyIdentitySnapshot } from "../property-settings.mjs";
 import {
   SERVICING_RECORD_TITLE,
   buildServicingLayout4830,
@@ -52,18 +53,36 @@ function formatTimestamp(value) {
   }).format(date);
 }
 
-export function servicingExportDescriptor(record, generatedAt = new Date().toISOString()) {
+export function servicingExportDescriptor(record, generatedAt = new Date().toISOString(), currentPropertySettings = null) {
   const revision = Number(record?.revision);
   const serviceDate = String(record?.serviceDate || "");
   if (!Number.isInteger(revision) || revision < 1 || !/^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) {
     throw new TypeError("A service date and record revision are required for export.");
   }
-  return Object.freeze({
+  let identity = record.propertySnapshot;
+  if (!identity) {
+    try {
+      identity = propertyIdentitySnapshot(currentPropertySettings ?? loadPropertySettings(globalThis.localStorage));
+    } catch {
+      identity = propertyIdentitySnapshot();
+    }
+  }
+  const legacyDescriptor = {
     title: SERVICING_RECORD_TITLE,
     generatedAt,
     serviceDate,
     revision,
+    businessName: identity.businessName,
+    shortName: identity.shortName,
+    identityStatus: record.propertySnapshot ? "snapshot" : "legacy/current-profile fallback",
     filename: `pallathorpe_4830_service_${serviceDate}_${filenameHours(record.engineHours)}h_rev-${revision}.pdf`,
+  };
+  if (!record.propertySnapshot) return Object.freeze(legacyDescriptor);
+  return Object.freeze({ ...legacyDescriptor,
+    businessName: identity.businessName,
+    shortName: identity.shortName,
+    identityStatus: "snapshot",
+    filename: `${identity.shortName.toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "pallathorpe"}_4830_service_${serviceDate}_${filenameHours(record.engineHours)}h_rev-${revision}.pdf`,
   });
 }
 
@@ -102,8 +121,9 @@ function presentationAppendix(entries) {
 export function buildServicingPdfContentLines(record, descriptor) {
   const layout = buildServicingLayout4830(record);
   const lines = [
-    { kind: "brand", text: "Pallathorpe Enterprises" },
+    { kind: "brand", text: descriptor.businessName || "Pallathorpe Enterprises" },
     { kind: "title", text: "4830 Service Record" },
+    { kind: "meta", text: `Identity: ${descriptor.identityStatus === "mixed" ? "Mixed property identities disclosed in saved records" : descriptor.identityStatus || "Current profile"}` },
     { kind: "subtitle", text: layout.subtitle },
     { kind: "identity", text: layout.recordIdentity },
     { kind: "outcome", text: layout.outcome },
@@ -116,7 +136,7 @@ export function buildServicingPdfContentLines(record, descriptor) {
   for (const section of layout.sections) {
     if (section.id === "boom" && layout.boomReference.length) {
       lines.push({ kind: "section", text: "Boom reference" });
-      lines.push({ kind: "boom-diagram", text: "Pallathorpe Enterprises boom reference - not to scale", locations: layout.boomReference });
+      lines.push({ kind: "boom-diagram", text: `${descriptor.businessName || "Pallathorpe Enterprises"} boom reference - not to scale`, locations: layout.boomReference });
       for (const location of layout.boomReference) {
         const fittingText = location.fittingLocations === null
           ? "fitting count not recorded"
@@ -202,7 +222,7 @@ export async function buildServicingPdf(record, descriptor, pdfLib = null) {
   const { PDFDocument, StandardFonts, rgb } = resolvedPdfLib;
   const document = await PDFDocument.create();
   document.setTitle(SERVICING_RECORD_TITLE);
-  document.setAuthor("Pallathorpe Enterprises");
+  document.setAuthor(descriptor.businessName || "Pallathorpe Enterprises");
   document.setSubject(`${layout.outcome} | ${layout.recordIdentity}`);
   const generatedDate = new Date(descriptor.generatedAt);
   if (!Number.isNaN(generatedDate.getTime())) {
@@ -234,7 +254,7 @@ export async function buildServicingPdf(record, descriptor, pdfLib = null) {
   };
 
   const drawCompactHeader = () => {
-    page.drawText("Pallathorpe Enterprises", { x: PAGE_MARGIN, y: 814, size: 8.5, font: bold, color: greenMid });
+    page.drawText(safePdfText(descriptor.businessName || "Pallathorpe Enterprises"), { x: PAGE_MARGIN, y: 814, size: 8.5, font: bold, color: greenMid });
     page.drawText("4830 Service Record", { x: PAGE_MARGIN, y: 797, size: 14, font: bold, color: ink });
     drawRight(layout.recordIdentity, PAGE_SIZE[0] - PAGE_MARGIN, 798, 7.5, regular, muted);
     page.drawLine({ start: { x: PAGE_MARGIN, y: 786 }, end: { x: PAGE_SIZE[0] - PAGE_MARGIN, y: 786 }, thickness: 1.2, color: green });
@@ -244,7 +264,7 @@ export async function buildServicingPdf(record, descriptor, pdfLib = null) {
   const addPage = ({ first = false } = {}) => {
     page = document.addPage(PAGE_SIZE);
     if (first) {
-      page.drawText("Pallathorpe Enterprises", { x: PAGE_MARGIN, y: 814, size: 10, font: bold, color: greenMid });
+      page.drawText(safePdfText(descriptor.businessName || "Pallathorpe Enterprises"), { x: PAGE_MARGIN, y: 814, size: 10, font: bold, color: greenMid });
       page.drawText("4830 Service Record", { x: PAGE_MARGIN, y: 788, size: 20, font: bold, color: ink });
       page.drawText(layout.subtitle, { x: PAGE_MARGIN, y: 773, size: 8.5, font: regular, color: muted });
       drawRight(`Revision ${descriptor.revision}`, PAGE_SIZE[0] - PAGE_MARGIN, 793, 9, bold, green);
@@ -390,7 +410,7 @@ export async function buildServicingPdf(record, descriptor, pdfLib = null) {
     page.drawRectangle({ x: PAGE_MARGIN, y: y - 23, width: CONTENT_WIDTH, height: 23, color: green });
     page.drawText("Boom reference", { x: PAGE_MARGIN + 7, y: y - 16, size: 10.5, font: bold, color: white });
     y -= 23;
-    page.drawText("Pallathorpe Enterprises boom reference - not to scale", { x: PAGE_MARGIN + 7, y: y - 15, size: 7.8, font: regular, color: muted });
+    page.drawText(`${safePdfText(descriptor.businessName || "Pallathorpe Enterprises")} boom reference - not to scale`, { x: PAGE_MARGIN + 7, y: y - 15, size: 7.8, font: regular, color: muted });
     const centerX = PAGE_SIZE[0] / 2;
     const boomY = y - 68;
     const label = (value, x, labelY) => {
@@ -527,7 +547,7 @@ export async function buildServicingPdf(record, descriptor, pdfLib = null) {
   const pages = document.getPages();
   pages.forEach((pdfPage, index) => {
     pdfPage.drawLine({ start: { x: PAGE_MARGIN, y: 39 }, end: { x: PAGE_SIZE[0] - PAGE_MARGIN, y: 39 }, thickness: 0.45, color: rule });
-    pdfPage.drawText("Pallathorpe Enterprises personal workshop record", { x: PAGE_MARGIN, y: 25, size: 7.2, font: regular, color: muted });
+    pdfPage.drawText(`${safePdfText(descriptor.businessName || "Pallathorpe Enterprises")} personal workshop record`, { x: PAGE_MARGIN, y: 25, size: 7.2, font: regular, color: muted });
     const revisionText = `Revision ${descriptor.revision}`;
     const pageText = `Page ${index + 1} of ${pages.length}`;
     pdfPage.drawText(revisionText, {
