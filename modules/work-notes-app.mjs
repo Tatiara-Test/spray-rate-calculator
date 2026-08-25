@@ -545,48 +545,61 @@ async function prepareWorkNotesCopies() {
     const pdfBytes = await buildWorkNotesPdf(data, descriptor);
     const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
     const textBlob = new Blob([textExport.text], { type: "text/plain;charset=utf-8" });
+    const files = typeof File === "function"
+      ? {
+          pdf: new File([pdfBlob], descriptor.filenames.pdf, { type: pdfBlob.type }),
+          text: new File([textBlob], descriptor.filenames.text, { type: textBlob.type }),
+        }
+      : { pdf: null, text: null };
     pendingWorkNotesDownloads = {
       pdfBlob,
       textBlob,
+      files,
+      descriptor,
       filenames: descriptor.filenames,
     };
-
-    const files = typeof File === "function"
-      ? [
-          new File([pdfBlob], descriptor.filenames.pdf, { type: pdfBlob.type }),
-          new File([textBlob], descriptor.filenames.text, { type: textBlob.type }),
-        ]
-      : [];
-    const shareResult = await handFilesToShareSheet({
-      navigatorLike: navigator,
-      files,
-      title: "Pallathorpe Work Notes",
-      text: `Work Notes for ${descriptor.startIso} to ${descriptor.endIso}.`,
-    });
-    if (shareResult.mode === "shared") {
-      pendingWorkNotesDownloads = null;
-      showToast("Copies handed to your phone for sharing.");
-      return;
-    }
-    if (shareResult.mode === "cancelled") {
-      pendingWorkNotesDownloads = null;
-      return;
-    }
-
-    const nativeShareFailed = shareResult.reason === "share-failed";
-    workNotesDownloadDialogMessage.textContent = nativeShareFailed
-      ? "Native sharing was unavailable. Your PDF and text copies are ready to download."
-      : "Your phone cannot share both files together. Download each copy, then choose where to save or send it.";
+    workNotesDownloadDialogMessage.textContent = "Your PDF and text copies are ready. Choose Share or Download.";
     workNotesDownloadDialog.showModal();
-    showToast(nativeShareFailed
-      ? "Native sharing was unavailable. PDF and text copies are ready to download."
-      : "PDF and text copies are ready to download.");
+    showToast("PDF and text copies are ready. Choose Share or Download.");
   } catch (error) {
-    showToast(error?.message || "Work Notes copies could not be generated.", true);
+    if (error?.name !== "AbortError") {
+      showToast(error?.message || "Work Notes copies could not be generated.", true);
+    }
   } finally {
     workNotesShareInProgress = false;
     updateWriteLockControls();
   }
+}
+
+async function sharePendingWorkNotes(kind) {
+  const pending = pendingWorkNotesDownloads;
+  if (!pending) return;
+  const file = pending.files?.[kind];
+  const label = kind === "pdf" ? "PDF" : "text";
+  if (!file) {
+    const message = "Native file sharing is unavailable on this device. Download PDF and text copies remain available.";
+    workNotesDownloadDialogMessage.textContent = message;
+    showToast(message, true);
+    return;
+  }
+  const shareResult = await handFilesToShareSheet({
+    navigatorLike: navigator,
+    files: [file],
+    title: "Pallathorpe Work Notes",
+    text: `Work Notes for ${pending.descriptor.startIso} to ${pending.descriptor.endIso}.`,
+  });
+  if (shareResult.mode === "shared") {
+    pendingWorkNotesDownloads = null;
+    if (workNotesDownloadDialog.open) workNotesDownloadDialog.close();
+    showToast(`${label} copy handed to your phone for sharing.`);
+    return;
+  }
+  if (shareResult.mode === "cancelled") return;
+  const message = shareResult.reason === "share-failed"
+    ? "Native sharing was unavailable. Download PDF and text copies remain available."
+    : "Native file sharing is unavailable on this device. Download PDF and text copies remain available.";
+  workNotesDownloadDialogMessage.textContent = message;
+  showToast(message, true);
 }
 
 function updateWriteLockControls() {
@@ -961,6 +974,8 @@ $("#export-text").addEventListener("click", () => {
 });
 
 $("#share-work-notes").addEventListener("click", prepareWorkNotesCopies);
+$("#share-work-notes-pdf").addEventListener("click", () => sharePendingWorkNotes("pdf"));
+$("#share-work-notes-text").addEventListener("click", () => sharePendingWorkNotes("text"));
 $("#download-work-notes-pdf").addEventListener("click", () => {
   if (!pendingWorkNotesDownloads) return;
   downloadBlob(pendingWorkNotesDownloads.pdfBlob, pendingWorkNotesDownloads.filenames.pdf);

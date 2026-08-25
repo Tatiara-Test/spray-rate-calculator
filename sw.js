@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-";
 const LEGACY_CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-legacy-";
-const CACHE_NAME = `${CACHE_PREFIX}v22-2026-08-14-spray-summary-app-guide-final`;
+const CACHE_NAME = `${CACHE_PREFIX}v24-2026-08-25-direct-share-dialog-final`;
 const APP_SHELL = [
   "./",
   "./index.html",

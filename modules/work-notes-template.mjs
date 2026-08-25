@@ -92,9 +92,9 @@ export const WORK_NOTES_TEMPLATE = `
     </form></dialog>
     <dialog id="work-notes-download-dialog" aria-labelledby="work-notes-download-dialog-title" aria-describedby="work-notes-download-dialog-message">
       <div class="dialog-shell">
-        <header class="dialog-header"><div><p class="eyebrow">Copies ready</p><h2 id="work-notes-download-dialog-title">Download Work Notes</h2></div><button id="close-work-notes-download-dialog-x" class="square-button close-button" type="button" aria-label="Close download options">×</button></header>
-        <p id="work-notes-download-dialog-message" class="download-dialog-message">Your PDF and text copies are ready to download.</p>
-        <div class="dialog-actions work-notes-download-actions"><button id="download-work-notes-pdf" class="secondary-button" type="button">Download PDF</button><button id="download-work-notes-text" class="secondary-button" type="button">Download text</button><button id="close-work-notes-download-dialog" class="quiet-button" type="button">Close</button></div>
+        <header class="dialog-header"><div><p class="eyebrow">Copies ready</p><h2 id="work-notes-download-dialog-title">Work Notes copies</h2></div><button id="close-work-notes-download-dialog-x" class="square-button close-button" type="button" aria-label="Close download options">×</button></header>
+        <p id="work-notes-download-dialog-message" class="download-dialog-message">Your PDF and text copies are ready. Choose Share or Download.</p>
+        <div class="dialog-actions work-notes-download-actions"><button id="share-work-notes-pdf" class="primary-button" type="button">Share PDF</button><button id="share-work-notes-text" class="secondary-button" type="button">Share text</button><button id="download-work-notes-pdf" class="secondary-button" type="button">Download PDF</button><button id="download-work-notes-text" class="secondary-button" type="button">Download text</button><button id="close-work-notes-download-dialog" class="quiet-button" type="button">Close</button></div>
       </div>
     </dialog>
     <dialog id="ai-demo-dialog" class="ai-demo-dialog" aria-labelledby="ai-demo-title">

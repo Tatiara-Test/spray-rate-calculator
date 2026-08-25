@@ -149,6 +149,8 @@ const shareReviewList = document.querySelector("#share-review-list");
 const shareReviewError = document.querySelector("#share-review-error");
 const downloadDialog = document.querySelector("#download-dialog");
 const downloadDialogMessage = document.querySelector("#download-dialog-message");
+const sharePaddockPdfButton = document.querySelector("#share-paddock-pdf");
+const sharePaddockCsvButton = document.querySelector("#share-paddock-csv");
 const downloadPdfButton = document.querySelector("#download-pdf");
 const downloadCsvButton = document.querySelector("#download-csv");
 const startRunFromCalculatorButton = document.querySelector("#start-run-from-calculator");
@@ -2333,40 +2335,59 @@ async function sharePaddock(paddockId) {
     ]);
     const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
     const csvBlob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
-    const canBuildFiles = typeof File === "function";
-    const files = canBuildFiles
-      ? [
-          new File([pdfBlob], filenames.pdf, { type: pdfBlob.type }),
-          new File([csvBlob], filenames.csv, { type: csvBlob.type }),
-        ]
-      : [];
-    const shareResult = await handFilesToShareSheet({
-      navigatorLike: navigator,
-      files,
-      title: `${paddock.name} spray record`,
-      text: `${descriptor.label} spray record, revision ${descriptor.revision}.`,
-    });
-    if (shareResult.mode === "shared") {
-      if (!recordGeneratedCopy(paddock, descriptor)) return;
-      showToast("Copies handed to your phone for sharing.");
-      return;
-    }
-    if (shareResult.mode === "cancelled") return;
-    const nativeShareFailed = shareResult.reason === "share-failed";
-    downloadDialogMessage.textContent = nativeShareFailed
-      ? "Native sharing was unavailable. Your PDF and CSV copies are ready to download."
-      : "Your phone cannot share both files together. Download each copy, then choose where to save or send it.";
-    pendingDownloads = { pdfBlob, csvBlob, filenames, paddock, descriptor };
+    pendingDownloads = {
+      pdfBlob,
+      csvBlob,
+      files: typeof File === "function"
+        ? {
+            pdf: new File([pdfBlob], filenames.pdf, { type: pdfBlob.type }),
+            csv: new File([csvBlob], filenames.csv, { type: csvBlob.type }),
+          }
+        : { pdf: null, csv: null },
+      filenames,
+      paddock,
+      descriptor,
+    };
+    downloadDialogMessage.textContent = "Your PDF and CSV copies are ready. Choose Share or Download.";
     downloadDialog.showModal();
     if (!recordGeneratedCopy(paddock, descriptor)) return;
-    showToast(nativeShareFailed
-      ? "Native sharing was unavailable. PDF and CSV copies are ready to download."
-      : "PDF and CSV copies are ready to download.");
+    showToast("PDF and CSV copies are ready. Choose Share or Download.");
   } catch (error) {
     if (error?.name !== "AbortError") {
       showToast(error?.message || "Copies could not be generated.");
     }
   }
+}
+
+async function sharePendingPaddockFile(kind) {
+  const pending = pendingDownloads;
+  if (!pending) return;
+  const file = pending.files?.[kind];
+  const label = kind === "pdf" ? "PDF" : "CSV";
+  if (!file) {
+    const message = "Native file sharing is unavailable on this device. Download PDF and CSV copies remain available.";
+    downloadDialogMessage.textContent = message;
+    showToast(message, true);
+    return;
+  }
+  const shareResult = await handFilesToShareSheet({
+    navigatorLike: navigator,
+    files: [file],
+    title: `${pending.paddock.name} spray record`,
+    text: `${pending.descriptor.label} spray record, revision ${pending.descriptor.revision}.`,
+  });
+  if (shareResult.mode === "shared") {
+    pendingDownloads = null;
+    if (downloadDialog.open) downloadDialog.close();
+    showToast(`${label} copy handed to your phone for sharing.`);
+    return;
+  }
+  if (shareResult.mode === "cancelled") return;
+  const message = shareResult.reason === "share-failed"
+    ? "Native sharing was unavailable. Download PDF and CSV copies remain available."
+    : "Native file sharing is unavailable on this device. Download PDF and CSV copies remain available.";
+  downloadDialogMessage.textContent = message;
+  showToast(message, true);
 }
 
 quickRateButtons.forEach((button) => {
@@ -2566,6 +2587,8 @@ shareReviewDialog.addEventListener("cancel", (event) => {
   finishShareReview(false);
 });
 
+sharePaddockPdfButton.addEventListener("click", () => sharePendingPaddockFile("pdf"));
+sharePaddockCsvButton.addEventListener("click", () => sharePendingPaddockFile("csv"));
 downloadPdfButton.addEventListener("click", () => {
   if (!pendingDownloads) return;
   downloadBlob(pendingDownloads.pdfBlob, pendingDownloads.filenames.pdf);

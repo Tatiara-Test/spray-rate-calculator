@@ -28,6 +28,13 @@ export const SETTINGS_TEMPLATE = `
         <p class="app-guide-status" id="app-guide-status" role="status" aria-live="polite" hidden></p>
       </section>
 
+      <section class="settings-card" aria-labelledby="downloaded-copies-heading">
+        <div class="settings-card-heading">
+          <div><p class="eyebrow">Phone storage</p><h2 id="downloaded-copies-heading">Downloaded copies</h2><p>Downloaded files are managed by Android outside the web app. On Samsung, open My Files, choose Downloads, select the files, then tap Delete and Move to Trash.</p></div>
+          <span>Android</span>
+        </div>
+      </section>
+
       <section class="settings-card" aria-labelledby="paddock-library-heading">
         <div class="settings-card-heading">
           <div><p class="eyebrow">Saved farm details</p><h2 id="paddock-library-heading">Paddock Library</h2><p>Names and total hectares are saved on this phone and can be selected inside Spray Operations.</p></div>
