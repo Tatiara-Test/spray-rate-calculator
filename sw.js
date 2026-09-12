@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-";
 const LEGACY_CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-legacy-";
-const CACHE_NAME = `${CACHE_PREFIX}v29-2026-08-26-prepublish-goal-loop-fix`;
+const CACHE_NAME = `${CACHE_PREFIX}v30-2026-09-12-local-improvements-r3`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -30,6 +30,7 @@ const APP_SHELL = [
   "./modules/property-settings.mjs",
   "./modules/spray-template.mjs",
   "./modules/spray-app.mjs",
+  "./modules/spray-recovery.mjs",
   "./modules/settings-template.mjs",
   "./modules/settings-app.mjs",
   "./modules/servicing/4830-service-definition.mjs",

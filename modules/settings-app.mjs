@@ -85,6 +85,8 @@ export function mountSettingsApp(host, options = {}) {
   const appGuideDialog = $("#app-guide-dialog");
   const appGuideDialogTitle = $("#app-guide-dialog-title");
   const closeAppGuide = $("#close-app-guide");
+  const backupAllRecords = $("#settings-backup-all-records");
+  const restoreAllRecords = $("#settings-restore-all-records");
   const toast = $("#settings-toast");
   const propertyForm = $("#property-settings-form");
   const propertyBusinessName = $("#property-business-name");
@@ -593,6 +595,8 @@ export function mountSettingsApp(host, options = {}) {
     }
   });
   shareAppGuide.addEventListener("click", downloadOrShareAppGuide);
+  backupAllRecords.addEventListener("click", () => options.onBackupRequest?.("backup"));
+  restoreAllRecords.addEventListener("click", () => options.onBackupRequest?.("restore"));
   propertyForm.addEventListener("submit", submitPropertyForm);
   propertyBusinessName.addEventListener("input", renderLivePropertyPreview);
   propertyShortName.addEventListener("input", renderLivePropertyPreview);

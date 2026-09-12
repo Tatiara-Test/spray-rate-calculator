@@ -48,6 +48,23 @@ export function buildAiFortnightContext(startDate, notes = {}) {
   };
 }
 
+export function dailyNotePresentation(date, todayDate, textValue, hasUnsavedDraft = false) {
+  const hasNote = Boolean(String(textValue ?? "").trim());
+  const isToday = date === todayDate;
+  const isFuture = date > todayDate;
+  const noteStatus = hasUnsavedDraft ? "Not confirmed saved on this device" : "Note saved";
+  return {
+    hasNote,
+    isToday,
+    stateText: isToday
+      ? hasNote ? `Today · ${noteStatus}` : "Today · Missing"
+      : hasNote ? noteStatus : isFuture ? "Upcoming" : "Missing note",
+    preview: hasNote
+      ? String(textValue).trim().replace(/\s+/g, " ")
+      : isToday ? "Tap to record today’s work" : isFuture ? "Tap to plan ahead" : "Tap to add work details",
+  };
+}
+
 export function mountWorkNotesApp(host, options = {}) {
 const root = host.shadowRoot || host.attachShadow({ mode: "open" });
 root.innerHTML = WORK_NOTES_TEMPLATE;
@@ -251,6 +268,11 @@ function renderPeriod() {
   $("#next-period").setAttribute("aria-label", `Next ${periodName}`);
   const selector = $("#period-kind");
   if (selector) selector.value = displayedPeriod;
+  root.querySelectorAll("[data-period-kind]").forEach((button) => {
+    const selected = button.dataset.periodKind === displayedPeriod;
+    button.setAttribute("aria-pressed", String(selected));
+    button.classList.toggle("selected", selected);
+  });
   const aiSummaryAction = $("#ai-summary-action");
   const aiSummaryCopy = $("#ai-summary-copy");
   if (aiSummaryAction) {
@@ -274,23 +296,7 @@ function renderNotes() {
       const cards = week
         .map((date) => {
           const text = data.notes[date]?.text.trim() ?? "";
-          const hasNote = Boolean(text);
-          const isToday = date === today;
-          const noteStatus = hasUnsavedDraft
-            ? "Not confirmed saved on this device"
-            : "Note saved";
-          const stateText = isToday
-            ? hasNote
-              ? `Today · ${noteStatus}`
-              : "Today · Missing"
-            : hasNote
-              ? noteStatus
-              : "Missing note";
-          const preview = hasNote
-            ? text.replace(/\s+/g, " ")
-            : isToday
-              ? "Tap to record today’s work"
-              : "Tap to add work details";
+          const { hasNote, isToday, stateText, preview } = dailyNotePresentation(date, today, text, hasUnsavedDraft);
           return `
             <button
               class="day-note${hasNote ? " has-note" : ""}${isToday ? " is-today" : ""}"
@@ -874,6 +880,11 @@ $("#period-kind")?.addEventListener("change", (event) => {
   displayedStart = periodStartFor(today, displayedPeriod);
   renderAll();
 });
+root.querySelectorAll("[data-period-kind]").forEach((button) => button.addEventListener("click", () => {
+  displayedPeriod = button.dataset.periodKind;
+  displayedStart = periodStartFor(today, displayedPeriod);
+  renderAll();
+}));
 
 $("#return-current").addEventListener("click", () => {
   displayedStart = periodStartFor(today, displayedPeriod);
@@ -1246,5 +1257,14 @@ window.addEventListener("appinstalled", () => {
 renderAll();
 activateSection(activeSection);
 host.activate = () => renderAll();
-return { renderAll, activateSection, refreshPropertySettings };
+function openCombinedBackup(action = "backup") {
+  activateSection("followups");
+  const panel = $("#combined-backup-panel");
+  const target = action === "restore" ? $("#restore-combined-backup") : $("#export-combined-backup");
+  panel?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  if (target && !target.disabled) target.click();
+  else panel?.focus?.();
+}
+
+return { renderAll, activateSection, refreshPropertySettings, openCombinedBackup };
 }

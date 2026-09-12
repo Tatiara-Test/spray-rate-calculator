@@ -23,8 +23,7 @@ p, h1, h2, h3, h4, dd { overflow-wrap: anywhere; }
 .servicing-root { background: var(--service-page); min-height: calc(100vh - var(--combined-nav-offset, 0px)); padding: 18px 13px max(34px, env(safe-area-inset-bottom)); }
 .servicing-shell { margin: 0 auto; max-width: 760px; }
 .servicing-header { align-items: center; display: flex; gap: 12px; margin: 2px 2px 18px; }
-.servicing-header .farmer-assistant-emblem { border-radius: 10px; height: 44px; object-fit: contain; width: 44px; }
-.servicing-header img { flex: 0 0 auto; height: 54px; object-fit: contain; width: 54px; }
+.servicing-header .farmer-assistant-emblem { border-radius: 10px; flex: 0 0 auto; height: 55px; object-fit: contain; width: 55px; }
 .servicing-header div { min-width: 0; }
 .servicing-header p, .eyebrow { color: var(--service-green); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.045em; margin: 0 0 3px; text-transform: uppercase; }
 .servicing-header h1 { font-size: clamp(1.4rem, 6vw, 2rem); line-height: 1.08; margin: 0; }

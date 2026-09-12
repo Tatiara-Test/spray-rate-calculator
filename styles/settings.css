@@ -29,8 +29,9 @@ button { cursor: pointer; }
   width: min(100%, 720px);
 }
 .settings-header { align-items: center; display: flex; gap: 11px; padding: 2px 2px 14px; }
-.settings-header img { flex: 0 0 auto; height: 48px; object-fit: contain; width: 48px; }
-.settings-header .farmer-assistant-emblem { border-radius: 9px; height: 42px; width: 42px; }
+.settings-header img { flex: 0 0 auto; object-fit: contain; }
+.settings-header .farmer-assistant-emblem { border-radius: 10px; height: 53px; width: 53px; }
+.settings-header > div { min-width: 0; }
 .settings-header p,
 .eyebrow { color: var(--green); font-size: 0.76rem; font-weight: 800; letter-spacing: 0.05em; margin: 0 0 3px; text-transform: uppercase; }
 .settings-header h1 { font-size: clamp(1.35rem, 5vw, 1.8rem); line-height: 1.1; margin: 0; }
@@ -82,8 +83,17 @@ button { cursor: pointer; }
   padding: 7px 10px;
 }
 .storage-status { color: var(--muted); font-size: 0.75rem; margin: 7px 0 13px; }
+.branding-preview { display: grid; gap: 4px; min-width: 0; }
+.branding-preview > strong,
+.branding-preview > span,
+.branding-preview > small { display: block; max-width: 100%; overflow-wrap: anywhere; }
+.branding-preview > strong { line-height: 1.2; }
+.branding-preview > span,
+.branding-preview > small { line-height: 1.35; }
 
 .app-guide-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.backup-actions button { flex: 1 1 190px; }
 .app-guide-actions button { flex: 1 1 180px; }
 .app-guide-status {
   background: var(--green-soft);

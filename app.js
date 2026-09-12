@@ -124,6 +124,7 @@ function ensureSettingsMounted() {
   settingsMountPromise = import("./modules/settings-app.mjs")
     .then(({ mountSettingsApp }) => {
       settings = mountSettingsApp(settingsHost, {
+        onBackupRequest: (action) => openCombinedBackup(action),
         onLibraryChange: () => spray.refreshPaddockLibrary?.(),
         hasExternalUnsavedLibraryChanges: () => spray.hasUnsavedLibraryChanges?.() === true,
         onPropertyChange: (next) => { propertySettings = next; applyPropertyTheme(next); applyPropertyIdentity(next); workNotes.refreshPropertySettings?.(next); spray.refresh?.(); servicing.refresh?.(); },
@@ -237,6 +238,11 @@ function routeForSection(section) {
   return { section, tab: null };
 }
 
+function openCombinedBackup(action = "backup") {
+  showRoute({ section: "work-notes", tab: "followups" }, { updateHash: true });
+  workNotes.openCombinedBackup?.(action);
+}
+
 sprayHost.requestTopLevelView = (tab) => showRoute({ section: "spray", tab }, { updateHash: true });
 workNotesHost.requestTopLevelSection = (tab) => showRoute({ section: "work-notes", tab }, { updateHash: true });
 document.querySelectorAll("[data-open-section]").forEach((button) => {
@@ -246,6 +252,7 @@ document.querySelector("#main-menu-button").addEventListener("click", () => {
   showRoute({ section: "home", tab: null }, { updateHash: true });
 });
 continueButton.addEventListener("click", () => showRoute(navigation.last, { updateHash: true }));
+document.querySelector("#home-backup-all-records").addEventListener("click", () => openCombinedBackup("backup"));
 window.addEventListener("hashchange", () => showRoute(routeFromHash(location.hash, navigation)));
 updateContinueCard();
 showRoute(routeFromHash(location.hash, navigation));

@@ -3,8 +3,7 @@ export const SETTINGS_TEMPLATE = `
   <div class="settings-root">
     <main class="settings-shell">
       <header class="settings-header">
-        <img src="./brand-mark.png" alt="" width="56" height="56" />
-        <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="48" height="48" />
+        <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="53" height="53" />
         <div><p id="settings-farm-name">Pallathorpe Enterprises</p><h1>Settings</h1></div>
       </header>
 
@@ -19,7 +18,7 @@ export const SETTINGS_TEMPLATE = `
 
       <section class="settings-card app-guide-card" aria-labelledby="app-guide-heading">
         <div class="settings-card-heading">
-          <div><p class="eyebrow">Help that works offline</p><h2 id="app-guide-heading">App guide</h2><p>Follow the main workflows in a simple on-screen guide, or keep a printable PDF copy.</p></div>
+          <div><p class="eyebrow">Help that works offline</p><h2 id="app-guide-heading">How to use the app</h2><p>Follow short, task-based instructions on screen, or keep a printable PDF copy.</p></div>
           <span>Offline</span>
         </div>
         <div class="app-guide-actions">
@@ -27,6 +26,12 @@ export const SETTINGS_TEMPLATE = `
           <button class="quiet-button" id="share-app-guide" type="button">Download / Share PDF</button>
         </div>
         <p class="app-guide-status" id="app-guide-status" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <section class="settings-card backup-card" aria-labelledby="settings-backup-heading">
+        <div class="settings-card-heading"><div><p class="eyebrow">Protect every section</p><h2 id="settings-backup-heading">Backup and restore</h2><p>Create one restorable JSON file containing records from across the app. Keep it somewhere separate from this phone. Restoring replaces matching records only after the app shows a confirmation.</p></div><span>All records</span></div>
+        <div class="backup-actions"><button class="primary-button" id="settings-backup-all-records" type="button">Back up all records</button><button class="quiet-button" id="settings-restore-all-records" type="button">Restore all records</button></div>
+        <p class="form-help">If backup or restore is unavailable, resolve the related section’s unsaved change or download its recovery copy first. PDF, CSV and text files are readable copies. The combined JSON backup is the file the app can restore.</p>
       </section>
 
       <section class="settings-card" aria-labelledby="property-settings-heading">
@@ -49,9 +54,9 @@ export const SETTINGS_TEMPLATE = `
         <div class="branding-preview" id="branding-preview" aria-label="Document header preview"><p class="eyebrow">Live document-header preview</p><strong id="branding-preview-short">Pallathorpe</strong><span id="branding-preview-business">Pallathorpe Enterprises</span><small>Farmer’s Assistant · FH emblem fixed</small></div>
       </section>
 
-      <section class="settings-card" aria-labelledby="downloaded-copies-heading">
+      <section class="settings-card" aria-labelledby="downloaded-files-heading">
         <div class="settings-card-heading">
-          <div><p class="eyebrow">Phone storage</p><h2 id="downloaded-copies-heading">Downloaded copies</h2><p>Downloaded files are managed by Android outside the web app. On Samsung, open My Files, choose Downloads, select the files, then tap Delete and Move to Trash.</p></div>
+          <div><p class="eyebrow">Phone storage</p><h2 id="downloaded-files-heading">Downloaded files</h2><p>Downloaded files are managed by Android outside the web app. On Samsung, open My Files, choose Downloads, select the files, then tap Delete and Move to Trash.</p></div>
           <span>Android</span>
         </div>
       </section>
@@ -99,17 +104,19 @@ export const SETTINGS_TEMPLATE = `
           <div><b>Work Notes</b><small>Write notes, review a Week, Fortnight or Month and manage the To-do list.</small></div>
           <div><b>Weather Shortcuts</b><small>Open saved weather websites or associated apps.</small></div>
           <div><b>4830 Servicing</b><small>Complete the checklist and prepare a service record.</small></div>
-          <div><b>Settings</b><small>Manage the Paddock Library and open this guide.</small></div>
+          <div><b>Settings</b><small>Learn the app, back up records and manage farm details.</small></div>
         </div>
 
         <article class="app-guide-section">
-          <h3>Spray Operations</h3>
-          <ol><li>Enter the tank mix in Calculator.</li><li>Save a tank or start and allocate a Buffer.</li><li>Open Paddocks to review the Spray Record and share PDF or CSV copies.</li></ol>
-          <p>Coverage and chemical-equivalent figures are calculated from saved records. They are not GPS-measured unique ground.</p>
+          <h3>Calculate and save one tank</h3>
+          <ol><li>Open <b>Calculator</b>, enter <b>Tank total, including all products</b> and the spray rate, then add each product and unit.</li><li>Review the calculated amounts and choose <b>Save tank record</b>.</li><li>Complete the paddock, date, operator, machine and application review, then choose <b>Save tank</b>.</li><li>After saving, choose <b>View saved record</b> or <b>Prepare next tank</b>.</li></ol>
+          <p>If an unfinished calculation appears after reopening, choose <b>Resume calculation</b> or <b>Start fresh</b>. A resumed unfinished edit becomes a new unsaved calculation; the original tank is unchanged. If saved records or restore history changed, the old draft remains visible but cannot safely resume.</p><p>Coverage and chemical-equivalent figures are calculated from saved records. They are not GPS-measured unique ground.</p>
         </article>
+        <article class="app-guide-section"><h3>Use one Buffer across paddocks</h3><ol><li>Prepare the mix, choose <b>Start buffer</b> and select the paddocks for this job.</li><li>At each paddock, enter <b>Controller remaining (L)</b>. If the controller started at 2,000 L and used 500 L, enter 1,500 L.</li><li>Review the allocation before recording the paddock.</li><li>Choose <b>Finish buffer</b> before sharing its paddock records. If the controller increases after a refill, finish the current Buffer first, then start another.</li></ol></article>
+        <article class="app-guide-section"><h3>Find and recover a tank record</h3><p><b>Find paddock</b> matches part of a name; <b>Clear</b> restores the recent-first list. After a confirmed deletion, <b>Undo tank deletion</b> can restore only the most recent deletion until another saved-record change or backup restore. Clearing or archiving that paddock prevents recovery, and a new deletion replaces it.</p></article>
         <article class="app-guide-section">
           <h3>Work Notes and To-do list</h3>
-          <ol><li>Write or dictate a daily note.</li><li>Review Summary for the selected Week, Fortnight or Month.</li><li>Keep outstanding work in the To-do list, then share or download a copy when ready.</li></ol>
+          <ol><li>Choose <b>Week</b>, <b>Fortnight</b> or <b>Month</b>, then tap <b>Open today’s note</b> or another date.</li><li>Type in <b>What did you do?</b>; check the saved indicator, then tap <b>Done</b>.</li><li>Open <b>Summary</b> and choose <b>Share / Save Copy</b>, or manage outstanding work in <b>To-do list</b>.</li></ol><p>Manual notes and summaries work without AI. Optional dictation and AI tools require setup and an internet connection; AI summaries currently require Fortnight view.</p>
         </article>
         <article class="app-guide-section">
           <h3>Weather Shortcuts</h3>
@@ -117,12 +124,12 @@ export const SETTINGS_TEMPLATE = `
         </article>
         <article class="app-guide-section">
           <h3>4830 Servicing</h3>
-          <ol><li>Create a draft for the service date and engine hours.</li><li>Work through the checklist, adding notes, exceptions or to-do items.</li><li>Finalise only when the record is ready, then prepare the PDF copy.</li></ol>
+          <p>First check the availability message. If it says <b>Prepared, not active</b>, record writing is unavailable.</p><ol><li>When writes are enabled, create a draft for the service date and engine hours.</li><li>Work through the checklist, adding notes, reasons or to-do items.</li><li>Finalise only when ready, then prepare the PDF copy.</li></ol>
         </article>
         <article class="app-guide-section">
-          <h3>Settings, Paddock Library and backup</h3>
-          <p>Add, edit or archive saved paddock names and total hectares in Paddock Library. Combined backup and restore controls are in Work Notes under Data. A restore changes device records only after confirmation.</p>
+          <h3>Back up all records</h3><ol><li>Open <b>Settings</b>, then <b>Backup and restore</b>.</li><li>If the action is unavailable, resolve the related section’s unsaved change or download its recovery copy first.</li><li>Tap <b>Back up all records</b> and keep the combined JSON file somewhere separate from this phone.</li><li>To recover it, choose <b>Restore all records</b>, select the intended JSON file and read the confirmation before continuing.</li></ol><p>A readable PDF, CSV or text copy cannot restore the app.</p>
         </article>
+        <article class="app-guide-section"><h3>Property &amp; appearance</h3><ol><li>Enter the farm or business name and optional short display name.</li><li>Choose the default reporting period and appearance theme.</li><li>Tap <b>Save property settings</b>.</li></ol><p>Use <b>Paddock Library</b> to add, edit, archive or restore names and total hectares. Use <b>Downloaded files</b> for guidance on files saved by the phone.</p></article>
       </div>
     </dialog>
     <div class="settings-toast" id="settings-toast" role="status" aria-live="polite" hidden></div>

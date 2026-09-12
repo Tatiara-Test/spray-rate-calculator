@@ -59,7 +59,11 @@ button { font: inherit; }
 .home-shell { margin: 0 auto; max-width: 720px; }
 .home-header { align-items: center; display: flex; gap: 13px; margin: 6px 2px 24px; }
 .home-header img { flex: 0 0 auto; height: 64px; object-fit: contain; width: 64px; }
-.home-header .farmer-assistant-emblem { border-radius: 12px; height: 56px; width: 56px; }
+.home-header .farmer-assistant-emblem { border-radius: 12px; height: auto; width: 70px; flex-shrink: 0; }
+.home-header > div { min-width: 0; overflow-wrap: anywhere; }
+.home-backup-button { background: var(--shell-card); border: 1px solid var(--shell-green); border-radius: 12px; color: var(--shell-green); cursor: pointer; font-weight: 700; margin-top: 18px; min-height: 48px; padding: 12px 16px; width: 100%; }
+.home-backup-button:focus-visible { outline: 3px solid #f2c94c; outline-offset: 2px; }
+.home-backup-help { color: var(--shell-muted); font-size: 0.85rem; line-height: 1.4; margin: 8px 0 0; text-align: center; }
 .home-header p {
   color: var(--shell-green);
   font-size: 0.78rem;

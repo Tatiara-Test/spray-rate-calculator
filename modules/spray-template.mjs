@@ -2,7 +2,7 @@ export const SPRAY_TEMPLATE = `
   <link rel="stylesheet" href="./styles/spray.css" />
   <div class="spray-root">
     <main class="app-shell">
-      <header class="brand-header"><img class="brand-mark" src="./brand-mark.png" alt="" width="64" height="64" /><img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="48" height="48" /><div><p id="spray-farm-name" class="farm-name">Pallathorpe Enterprises</p><h1>Spray Rate Calculator</h1></div></header>
+      <header class="brand-header"><img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="60" height="60" /><div><p id="spray-farm-name" class="farm-name">Pallathorpe Enterprises</p><h1>Spray Rate Calculator</h1></div></header>
       <nav class="view-switch" aria-label="Spray Operations sections" role="tablist"><button id="spray-calculator-tab" class="selected" type="button" data-view-button="calculator" role="tab" aria-selected="true" aria-controls="calculator-view">Calculator</button><button id="spray-run-tab" type="button" data-view-button="run" role="tab" aria-selected="false" aria-controls="run-view">Buffers</button><button id="spray-paddocks-tab" type="button" data-view-button="paddocks" role="tab" aria-selected="false" aria-controls="paddocks-view">Paddocks</button></nav>
       <section class="storage-warning storage-lock-warning" id="storage-lock-warning" role="alert" tabindex="-1" hidden>
         <div><strong id="storage-lock-title">Paddock records protected</strong><p id="storage-lock-message"></p></div>
@@ -20,6 +20,14 @@ export const SPRAY_TEMPLATE = `
         <div class="storage-warning-actions"><button id="retry-record-save" type="button">Retry saving</button><button id="download-unsaved-records" type="button">Download recovery copy</button></div>
       </section>
       <div id="calculator-view" data-view-panel="calculator" role="tabpanel" aria-labelledby="spray-calculator-tab">
+        <section id="draft-recovery" class="calculation-recovery" hidden aria-labelledby="draft-recovery-title">
+          <strong id="draft-recovery-title">Unfinished calculation</strong><p id="draft-recovery-description"></p>
+          <p>This is a draft, not a saved tank. Check every value and unit before saving. Buffer allocations are separate.</p>
+          <div class="recovery-actions"><button id="resume-calculation" type="button">Resume calculation</button><button id="start-fresh-calculation" type="button">Start fresh</button></div>
+        </section>
+        <p id="draft-warning" class="recovery-error" role="alert" hidden></p>
+        <p id="draft-status" class="draft-status" role="status" aria-live="polite"></p>
+        <div id="calculation-workspace">
         <section class="calculator-card" aria-labelledby="mix-heading">
           <div class="section-heading"><span class="step-number">1</span><div><h2 id="mix-heading">Tank mixture</h2><p>Enter the tank total, including all products.</p></div></div>
           <div class="tank-grid">
@@ -31,10 +39,15 @@ export const SPRAY_TEMPLATE = `
         <section class="calculator-card products-card" aria-labelledby="products-heading">
           <div class="section-heading"><span class="step-number">2</span><div><h2 id="products-heading">Product rates</h2><p>Copy each rate and unit exactly from the spray sheet.</p></div></div>
           <div class="basis-key" aria-label="Rate type reminder"><span><i class="dot hectare-dot"></i> Per hectare</span><span><i class="dot water-dot"></i> Per 100 L water</span></div>
-          <div class="product-list" id="product-list"></div><datalist id="chemical-suggestions"></datalist><p class="error product-name-error" id="product-name-error" role="alert" hidden></p><button class="add-product" id="add-product" type="button">+ Add product 5</button>
+          <div class="product-list" id="product-list"></div><datalist id="chemical-suggestions"></datalist><p class="error product-name-error" id="product-name-error" role="alert" hidden></p><button class="add-product" id="add-product" type="button">+ Add product 2</button>
         </section>
         <div class="edit-banner" id="edit-banner" hidden><div><strong id="edit-title">Editing tank record</strong><span>Update the calculation, then save the record.</span></div><button id="cancel-edit" type="button">Cancel edit</button></div>
+        <section id="saved-tank-actions" class="calculation-recovery saved-tank-actions" role="status" hidden>
+          <strong id="saved-tank-message"></strong><p>The mix stays here for your next tank. Review the tank total, products and units before saving again.</p>
+          <div class="recovery-actions"><button id="view-saved-record" type="button">View saved record</button><button id="prepare-next-tank" type="button">Prepare next tank</button></div>
+        </section>
         <button class="save-record-button" id="save-record-button" type="button">Save tank record</button><button class="secondary-record-button" id="start-run-from-calculator" type="button">Start buffer</button><button class="clear-button" id="clear-button" type="button">Clear calculation</button>
+        </div>
       </div>
       <section id="run-view" data-view-panel="run" role="tabpanel" hidden aria-labelledby="spray-run-tab">
         <div class="run-intro"><div><p class="eyebrow">Controller-based allocation</p><h2>Multi-paddock buffer</h2><p>Record each controller boundary as you move between paddocks. The app allocates liquid and products without pretending Camera spray covered the whole paddock.</p></div></div>
@@ -68,8 +81,9 @@ export const SPRAY_TEMPLATE = `
             <p class="run-helper" id="run-selected-plan">Choose a paddock selected for this buffer.</p>
             <div class="controller-grid">
               <div><span>Controller before</span><strong id="run-controller-before">&mdash;</strong></div>
-              <label class="dialog-field"><span>Controller after</span><span class="input-with-unit compact-unit-input"><input id="run-controller-after" type="number" inputmode="decimal" min="0" step="any" required /><b>L</b></span></label>
+              <label class="dialog-field"><span>Controller remaining (L)</span><span class="input-with-unit compact-unit-input"><input id="run-controller-after" type="number" inputmode="decimal" min="0" step="any" required aria-describedby="controller-remaining-help" /><b>L</b></span></label>
             </div>
+            <p class="run-helper" id="controller-remaining-help">Enter the litres remaining on the controller. Starting at 2,000 L and using 500 L means entering 1,500 L.</p>
             <p class="run-helper" id="run-allocation-preview">Enter the next controller reading.</p>
             <p class="dialog-error" id="run-allocation-error" hidden></p>
             <button class="confirm-save-button" id="record-run-allocation" type="submit">Record paddock</button>
@@ -81,6 +95,9 @@ export const SPRAY_TEMPLATE = `
       </section>
       <section id="paddocks-view" data-view-panel="paddocks" role="tabpanel" hidden aria-labelledby="spray-paddocks-tab">
         <div class="paddocks-intro"><div><h2 id="paddocks-heading">Paddock records</h2><p id="paddock-storage-status">Saved on this phone only</p><p class="operator-profile">Operator: <strong id="operator-profile-name">Not set</strong> <button id="change-operator" type="button">Change</button></p></div><span id="paddock-count">0 of 25 paddocks</span></div>
+        <section id="tank-undo" class="calculation-recovery" hidden><strong>Deleted tank recovery</strong><p id="tank-undo-description"></p><p>Only the most recent deletion on this browser is kept, including after reopening. Undo is available until another saved-record change or backup restore. Clearing or archiving a paddock also prevents recovery. A new deletion replaces this recovery.</p><button id="undo-tank-delete" type="button">Undo tank deletion</button><p id="tank-undo-error" class="recovery-error" role="alert" hidden></p></section>
+        <div class="paddock-search"><label class="field"><span>Find paddock</span><input id="find-paddock" type="search" placeholder="Part of a paddock name" autocomplete="off" /></label><button id="clear-paddock-search" type="button" hidden>Clear</button></div>
+        <p id="paddock-no-matches" role="status" hidden>No paddocks match this name. Clear the search to see all paddocks.</p>
         <div class="paddock-list" id="paddock-list"></div>
         <div class="empty-state" id="paddock-empty"><strong>No paddocks saved yet</strong><p>Use Save tank record after completing a calculation.</p><button type="button" data-switch-to-calculator>Return to calculator</button></div>
         <details class="archived-paddocks" id="archived-paddocks" hidden>

@@ -3,8 +3,7 @@ export const WORK_NOTES_TEMPLATE = `
   <div class="work-notes-root">
     <div class="app-shell">
       <header class="brand-header">
-        <img class="brand-mark" src="./brand-mark.png" alt="" width="56" height="56" />
-        <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="48" height="48" />
+        <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="55" height="55" />
         <div class="brand-copy"><p id="work-notes-farm-name" class="farm-name">Pallathorpe</p><h1>Work Notes</h1></div>
         <button id="install-button" class="quiet-button install-button" type="button" hidden>Install</button>
       </header>
@@ -27,7 +26,7 @@ export const WORK_NOTES_TEMPLATE = `
             <div class="period-title"><p id="period-kicker">Current fortnight</p><h2 id="period-label">Loading dates…</h2></div>
             <button id="next-period" class="square-button" type="button" aria-label="Next reporting period"><span aria-hidden="true">›</span></button>
           </div>
-          <div class="period-actions"><label class="period-picker"><span>View</span><select id="period-kind"><option value="week">Week</option><option value="fortnight" selected>Fortnight</option><option value="month">Month</option></select></label><button id="return-current" class="secondary-button" type="button" hidden>Current period</button><button id="open-today" class="primary-button" type="button">Open today’s note</button></div>
+          <div class="period-actions"><fieldset class="period-choice"><legend>Reporting period</legend><button type="button" data-period-kind="week" aria-pressed="false">Week</button><button type="button" data-period-kind="fortnight" aria-pressed="true">Fortnight</button><button type="button" data-period-kind="month" aria-pressed="false">Month</button><select id="period-kind" aria-hidden="true" tabindex="-1"><option value="week">Week</option><option value="fortnight" selected>Fortnight</option><option value="month">Month</option></select></fieldset><button id="return-current" class="secondary-button" type="button" hidden>Current period</button><button id="open-today" class="primary-button" type="button">Open today’s note</button></div>
         </section>
         <aside id="due-attention" class="attention-card" aria-labelledby="attention-title" hidden>
           <div><p class="eyebrow">Needs attention</p><h2 id="attention-title">Due to-do items</h2></div><div id="attention-items"></div>
@@ -39,7 +38,7 @@ export const WORK_NOTES_TEMPLATE = `
           <button id="followups-tab" class="section-tab" type="button" role="tab" aria-selected="false" aria-controls="followups-section" data-section-target="followups">To-do list <span id="followup-count" class="tab-count" hidden>0</span></button>
         </nav>
         <section id="notes-section" class="app-section" role="tabpanel" aria-labelledby="notes-tab" data-section="notes">
-          <div class="section-intro"><div><p class="eyebrow">Displayed reporting period</p><h2>Daily notes</h2></div><div class="note-legend" aria-label="Note status legend"><span><i class="legend-dot today-dot"></i> Today</span><span><i class="legend-dot saved-dot"></i> Note</span><span><i class="legend-dot missing-dot"></i> Missing</span></div></div>
+          <div class="section-intro"><div><p class="eyebrow">Displayed reporting period</p><h2>Daily notes</h2></div><div class="note-legend" aria-label="Note status legend"><span><i class="legend-dot today-dot"></i> Today</span><span><i class="legend-dot saved-dot"></i> Note</span><span><i class="legend-dot upcoming-dot"></i> Upcoming</span><span><i class="legend-dot missing-dot"></i> Missing</span></div></div>
           <div id="notes-weeks"></div>
         </section>
         <section id="summary-section" class="app-section" role="tabpanel" aria-labelledby="summary-tab" data-section="summary" hidden>
@@ -58,10 +57,10 @@ export const WORK_NOTES_TEMPLATE = `
             <div><p class="eyebrow">Device-only records</p><h3 id="data-title">Backup and restore</h3><p>Notes stay in this browser unless you export them. A restore replaces the Work Notes records on this device after confirmation.</p></div>
             <div class="data-actions"><button id="export-backup" class="secondary-button" type="button">Download Work Notes JSON</button><button id="choose-restore" class="quiet-button" type="button">Restore Work Notes JSON</button><input id="restore-file" type="file" accept="application/json,.json" hidden /></div>
           </section>
-          <section class="data-card combined-data-card" aria-labelledby="combined-data-title">
+          <section id="combined-backup-panel" class="data-card combined-data-card" aria-labelledby="combined-data-title" tabindex="-1">
             <div><p class="eyebrow">Whole combined app</p><h3 id="combined-data-title">Combined backup</h3><p>Includes paddock history, the Paddock Library, Work Notes, 4830 servicing records, operator settings, location and saved weather links. It never alters the original legacy storage keys.</p></div>
             <div class="data-actions">
-              <button id="export-combined-backup" class="secondary-button" type="button">Download combined JSON</button><button id="restore-combined-backup" class="quiet-button" type="button">Restore combined JSON</button><input id="combined-restore-file" type="file" accept="application/json,.json" hidden />
+              <button id="export-combined-backup" class="secondary-button" type="button">Back up all records</button><button id="restore-combined-backup" class="quiet-button" type="button">Restore all records</button><input id="combined-restore-file" type="file" accept="application/json,.json" hidden />
               <div class="previous-state-recovery" aria-labelledby="previous-state-recovery-title">
                 <strong id="previous-state-recovery-title">Previous-state recovery</strong>
                 <p id="previous-state-recovery-status">No verified previous-state recovery could be found. Browser storage may be empty or unavailable.</p>

@@ -1,4 +1,6 @@
 import { SPRAY_TEMPLATE } from "./spray-template.mjs";
+import { CALCULATOR_DRAFT_KEY, inspectCalculatorDraft, persistCalculatorDraft, removeRecovery, recordRecoveryContext, canResumeCalculatorDraft,
+  inspectTankRecovery, deleteTankWithRecovery, restoreDeletedTank, filterPaddocksByName } from "./spray-recovery.mjs";
 import {
   MACHINES,
   PADDOCK_LIBRARY_VERSION,
@@ -10,6 +12,7 @@ import {
   inspectPaddockLibraryStore,
   inspectPaddockStore,
   inspectProfileStore,
+  normalizePaddockStore,
   persistPaddockLibrary,
   persistPaddockStore,
   persistProfile,
@@ -209,13 +212,24 @@ const activeRunAddPaddock = document.querySelector("#active-run-add-paddock");
 const activeRunSelectedPaddocks = document.querySelector("#active-run-selected-paddocks");
 const activeRunPaddockError = document.querySelector("#active-run-paddock-error");
 
-let visibleProducts = 4;
+let visibleProducts = 1;
+let draftReady = false;
+let pendingDraft = inspectCalculatorDraft();
+let lastDraftSignature = null;
+let lastSavedPaddockId = null;
+let pendingTankSave = null;
+const draftRecovery = document.querySelector("#draft-recovery");
+const draftStatus = document.querySelector("#draft-status");
+const draftWarning = document.querySelector("#draft-warning");
+const savedTankActions = document.querySelector("#saved-tank-actions");
+const paddockSearch = document.querySelector("#find-paddock");
 let expandedPaddockId = null;
 let editingNoteId = null;
 let editingTankContext = null;
 let toastTimer = null;
 const storeInspection = inspectStore();
-const storageWriteLocked = ["corrupt", "future"].includes(storeInspection.status);
+let storageWriteLocked = ["corrupt", "future"].includes(storeInspection.status);
+let recoveryWriteUncertain = false;
 let store = storeInspection.status === "ready"
   ? storeInspection.value
   : {
@@ -302,6 +316,11 @@ function renderStorageWarnings() {
       ? "These records were created by a newer app version. Saving is locked so the original data cannot be overwritten."
       : "These records could not be read. Saving is locked and the original stored data has been left untouched.";
     downloadOriginalRecordsButton.disabled = typeof storeInspection.raw !== "string";
+    if (recoveryWriteUncertain) {
+      storageLockTitle.textContent = "Reload to check tank recovery";
+      storageLockMessage.textContent = "A recovery write could not be verified. Further record writes are locked. Close and reopen the app to check the saved state; the recovery copy has been retained.";
+      downloadOriginalRecordsButton.disabled = true;
+    }
   }
   profileLockWarning.hidden = !profileWriteLocked;
   if (profileWriteLocked) {
@@ -345,13 +364,21 @@ function persistStore() {
   }
   try {
     persistPaddockStore(store);
-    pendingPersistence.records = false;
-    renderStorageWarnings();
-    return true;
   } catch {
     markPersistenceFailure("records");
     return false;
   }
+  pendingPersistence.records = false;
+  renderStorageWarnings();
+  // Every successful store write commits the pending tank, including a note
+  // save or Buffer action that reaches this writer before Retry saving.
+  const completion = pendingTankSave;
+  pendingTankSave = null;
+  if (completion) {
+    try { finalizeTankSave(completion); }
+    catch { warnDraft("The tank was saved, but draft finalisation could not be confirmed. Check saved records before resuming an old draft."); }
+  }
+  return true;
 }
 
 function persistOperatorProfile() {
@@ -723,9 +750,9 @@ function updateAddButton() {
   }
 }
 
-function resetProductRows(count = 4) {
+function resetProductRows(count = 1) {
   productList.replaceChildren();
-  visibleProducts = Math.min(6, Math.max(4, count));
+  visibleProducts = Math.min(6, Math.max(1, count));
   for (let index = 0; index < visibleProducts; index += 1) addProductRow();
   updateAddButton();
 }
@@ -845,6 +872,120 @@ function calculate() {
   saveRecordButton.disabled = storageWriteLocked || !calculation.valid;
   startRunFromCalculatorButton.disabled = storageWriteLocked || !calculation.valid;
   if (!document.querySelector("#run-view").hidden) renderRunView();
+  rememberCalculation();
+}
+
+function draftInputs() {
+  return { mixVolume: mixVolumeInput.value, sprayRate: sprayRateInput.value,
+    wasEditing: Boolean(editingTankContext),
+    recordContext: editingTankContext ? recordRecoveryContext(store) : null,
+    products: getProductRows().map(({ name, rateText, unit }) => ({ name, rateText, unit })) };
+}
+
+function warnDraft(message) {
+  draftWarning.textContent = message;
+  draftWarning.hidden = false;
+}
+
+function rememberCalculation() {
+  if (!draftReady || pendingDraft.status !== "absent") return;
+  const inputs = draftInputs();
+  const signature = JSON.stringify(inputs);
+  if (signature === lastDraftSignature) return;
+  savedTankActions.hidden = true;
+  try {
+    if (!hasCalculationValues()) {
+      removeRecovery(CALCULATOR_DRAFT_KEY);
+      draftStatus.textContent = "";
+    } else {
+      const draft = persistCalculatorDraft(inputs);
+      draftStatus.textContent = `Unfinished calculation saved on this device · ${new Date(draft.savedAt).toLocaleString("en-AU")}`;
+    }
+    lastDraftSignature = signature;
+    draftWarning.hidden = true;
+  } catch {
+    warnDraft("This calculation could not be saved as a draft on this device. Keep the app open; changes may be lost if you close or reload it.");
+  }
+}
+
+function clearStoredDraft() {
+  try {
+    removeRecovery(CALCULATOR_DRAFT_KEY);
+    lastDraftSignature = JSON.stringify(draftInputs());
+    draftStatus.textContent = "";
+    draftWarning.hidden = true;
+    return true;
+  } catch {
+    warnDraft("The old draft could not be cleared on this device. It may be offered again after reopening; check saved records before saving another tank.");
+    return false;
+  }
+}
+
+function tankSaveInputSignature() {
+  const { mixVolume, sprayRate, products } = draftInputs();
+  return JSON.stringify({ mixVolume, sprayRate, products });
+}
+
+function captureTankSaveCompletion(paddock, tank, message) {
+  let draftRaw;
+  try { draftRaw = globalThis.localStorage.getItem(CALCULATOR_DRAFT_KEY); } catch { /* No authority to clear an unreadable draft. */ }
+  return { paddockId: paddock.id, tankId: tank.id, tankSignature: tankContentSignature(tank), message,
+    inputSignature: tankSaveInputSignature(), draftRaw };
+}
+
+function finalizeTankSave(completion) {
+  if (!completion) return;
+  const tank = findTank(findPaddock(completion.paddockId), completion.tankId);
+  if (!tank || tankContentSignature(tank) !== completion.tankSignature) return;
+  const sameInputs = tankSaveInputSignature() === completion.inputSignature;
+  let sameDraft = false;
+  try {
+    sameDraft = completion.draftRaw !== undefined
+      && globalThis.localStorage.getItem(CALCULATOR_DRAFT_KEY) === completion.draftRaw;
+  } catch { /* Preserve the draft if its identity cannot be checked. */ }
+  if (sameInputs && sameDraft) clearStoredDraft();
+  lastSavedPaddockId = completion.paddockId;
+  document.querySelector("#saved-tank-message").textContent = sameInputs
+    ? completion.message : `${completion.message}. Your newer calculation has been kept.`;
+  document.querySelector("#prepare-next-tank").hidden = !sameInputs;
+  savedTankActions.hidden = false;
+}
+
+function showDraftRecovery() {
+  const available = pendingDraft.status !== "absent";
+  const stale = pendingDraft.status === "ready" && !canResumeCalculatorDraft(pendingDraft.value, store);
+  draftRecovery.hidden = !available;
+  document.querySelector("#calculation-workspace").hidden = available;
+  document.querySelector("#resume-calculation").hidden = pendingDraft.status !== "ready";
+  document.querySelector("#resume-calculation").disabled = stale;
+  document.querySelector("#draft-recovery-description").textContent = pendingDraft.status === "ready"
+    ? `Saved ${new Date(pendingDraft.value.savedAt).toLocaleString("en-AU")}.${stale ? " Saved records or restore history changed or could not be checked. This old draft is retained but cannot safely resume. Start fresh discards it." : pendingDraft.value.wasEditing ? " This was an unfinished edit. Resume loads a new calculation; the original saved tank is unchanged." : ""}`
+    : "The stored draft could not be read. Start fresh discards only the calculator draft.";
+}
+
+function renderTankRecovery() {
+  const inspection = inspectTankRecovery();
+  const panel = document.querySelector("#tank-undo");
+  panel.hidden = inspection.status === "absent";
+  const present = inspection.status === "ready" && store.paddocks.some((p) => p.tanks.some((t) => t.id === inspection.value.tank.id));
+  document.querySelector("#undo-tank-delete").disabled = storageWriteLocked || pendingPersistence.records || inspection.status !== "ready" || present;
+  document.querySelector("#tank-undo-description").textContent = inspection.status === "ready"
+    ? present ? "This tank is already present. It will not be restored twice."
+      : `Tank ${inspection.value.tank.tankNumber} · ${inspection.value.afterPaddock.name} · deleted ${new Date(inspection.value.deletedAt).toLocaleString("en-AU")}`
+    : inspection.message || "";
+}
+
+function reconcileRecoveryFailure() {
+  const inspected = inspectPaddockStore();
+  if (inspected.status === "ready") store = inspected.value;
+  else {
+    recoveryWriteUncertain = true;
+    storageWriteLocked = true;
+  }
+  renderStorageWarnings();
+  renderPaddocks();
+  renderRunView();
+  calculate();
 }
 
 function hasCalculationValues() {
@@ -1157,6 +1298,18 @@ function saveTankRecord(event) {
   if (confirmSaveButton.disabled) return;
   confirmSaveButton.disabled = true;
   saveError.hidden = true;
+  const currentRecords = inspectPaddockStore();
+  const changedOnDisk = currentRecords.status === "ready"
+    ? JSON.stringify(currentRecords.value) !== JSON.stringify(normalizePaddockStore(store))
+    : currentRecords.status !== "absent" || store.paddocks.length > 0 || store.runs.length > 0;
+  if (pendingPersistence.records || changedOnDisk) {
+    saveError.textContent = pendingPersistence.records
+      ? "The last change has not been saved yet. Use Retry saving before adding another tank."
+      : "Saved records changed while this calculation was open. Reload and review the current records before saving; this calculation remains a draft.";
+    saveError.hidden = false;
+    confirmSaveButton.disabled = false;
+    return;
+  }
 
   const calculation = getCalculation();
   const selectedMachine = MACHINES.includes(saveMachine.value) ? saveMachine.value : null;
@@ -1219,6 +1372,12 @@ function saveTankRecord(event) {
   const existingTank = editingTankContext
     ? findTank(sourcePaddock, editingTankContext.tankId)
     : null;
+  if (editingTankContext && (!existingTank || JSON.stringify(existingTank) !== editingTankContext.original)) {
+    saveError.textContent = "The original tank has changed or was removed. Cancel this edit and review the current saved record before saving.";
+    saveError.hidden = false;
+    confirmSaveButton.disabled = false;
+    return;
+  }
 
   if (!targetPaddock) {
     if (activePaddocks(store.paddocks).length >= MAX_PADDOCKS) {
@@ -1293,6 +1452,8 @@ function saveTankRecord(event) {
   if (tank.operator) profile.operator = tank.operator;
   if (MACHINES.includes(tank.machine)) profile.lastMachine = tank.machine;
 
+  pendingTankSave = captureTankSaveCompletion(targetPaddock, tank, message);
+  clearEditingState();
   const recordsSaved = persistStore();
   let profileSaved = false;
   if (recordsSaved) {
@@ -1303,7 +1464,6 @@ function saveTankRecord(event) {
   refreshSuggestions();
 
   expandedPaddockId = targetPaddock.id;
-  clearEditingState();
   saveDialog.close();
   renderPaddocks();
   if (!recordsSaved) return;
@@ -1575,7 +1735,7 @@ function updateRunAllocationPreview() {
   const before = currentRunController(run);
   const after = Number(runControllerAfter.value);
   if (runControllerAfter.value === "" || !Number.isFinite(after)) {
-    runAllocationPreview.textContent = "Enter the next controller reading.";
+    runAllocationPreview.textContent = "Enter the litres remaining on the controller.";
     return;
   }
   if (after < 0 || after > before) {
@@ -1607,7 +1767,7 @@ function recordRunAllocation(event) {
   ) {
     runAllocationError.textContent = after === before
         ? "The controller reading has not changed; no liquid can be allocated."
-        : "Choose a paddock selected for this buffer and enter a controller-after reading below the controller-before value.";
+        : "Choose a paddock selected for this buffer and enter Controller remaining (L) below the controller-before value.";
     runAllocationError.hidden = false;
     return;
   }
@@ -2018,9 +2178,10 @@ function renderPaddockCard(paddock) {
 }
 
 function renderArchivedPaddocks() {
-  const archived = archivedPaddocks(store.paddocks).sort(
+  const allArchived = archivedPaddocks(store.paddocks).sort(
     (left, right) => new Date(right.archivedAt) - new Date(left.archivedAt),
   );
+  const archived = filterPaddocksByName(allArchived, paddockSearch.value);
   archivedPaddockSection.hidden = archived.length === 0;
   archivedPaddockSummary.textContent = `Archived paddocks · ${archived.length}`;
   const restoreAvailable = canRestorePaddock(store.paddocks, MAX_PADDOCKS);
@@ -2036,6 +2197,7 @@ function renderArchivedPaddocks() {
 }
 
 function renderPaddocks() {
+  renderTankRecovery();
   if (storageWriteLocked) {
     paddockCount.textContent = "Records unavailable";
     paddockEmpty.hidden = true;
@@ -2049,9 +2211,12 @@ function renderPaddocks() {
     (left, right) => new Date(right.updatedAt) - new Date(left.updatedAt),
   );
   paddockCount.textContent = `${paddocks.length} of ${MAX_PADDOCKS} paddocks`;
-  paddockEmpty.hidden = paddocks.length > 0;
+  paddockEmpty.hidden = paddocks.length > 0 || Boolean(paddockSearch.value.trim());
   paddockList.hidden = paddocks.length === 0;
-  paddockList.innerHTML = paddocks.map(renderPaddockCard).join("");
+  const matches = filterPaddocksByName(paddocks, paddockSearch.value);
+  document.querySelector("#clear-paddock-search").hidden = !paddockSearch.value;
+  document.querySelector("#paddock-no-matches").hidden = !paddockSearch.value.trim() || matches.length > 0 || filterPaddocksByName(archivedPaddocks(store.paddocks), paddockSearch.value).length > 0;
+  paddockList.innerHTML = matches.map(renderPaddockCard).join("");
   renderArchivedPaddocks();
 }
 
@@ -2060,9 +2225,15 @@ function editTankRecord(paddockId, tankId) {
   const tank = findTank(paddock, tankId);
   if (!paddock || !tank) return;
 
+  if (pendingDraft.status !== "absent") {
+    requestTopLevelView("calculator");
+    showToast("Resume or discard the unfinished calculation before editing a saved tank.");
+    return;
+  }
+  if (hasCalculationValues() && !window.confirm("Replace the current unfinished calculation with this saved tank for editing?")) return;
   mixVolumeInput.value = tank.tankTotal;
   sprayRateInput.value = tank.sprayRate;
-  const requiredRows = Math.max(4, ...tank.products.map((product) => product.slot + 1));
+  const requiredRows = Math.max(1, ...tank.products.map((product) => product.slot + 1));
   resetProductRows(requiredRows);
   const rows = [...productList.querySelectorAll(".product-row")];
   tank.products.forEach((product) => {
@@ -2070,7 +2241,7 @@ function editTankRecord(paddockId, tankId) {
     rows[product.slot].querySelector(".product-rate").value = product.rate;
     rows[product.slot].querySelector(".product-unit").value = product.unit;
   });
-  editingTankContext = { paddockId, tankId };
+  editingTankContext = { paddockId, tankId, original: JSON.stringify(tank) };
   editBanner.hidden = false;
   editTitle.textContent = `Editing ${paddock.name} · Tank ${tank.tankNumber}`;
   saveRecordButton.textContent = "Update tank record";
@@ -2083,13 +2254,24 @@ function deleteTankRecord(paddockId, tankId) {
   const paddock = findPaddock(paddockId);
   const tank = findTank(paddock, tankId);
   if (!paddock || !tank) return;
-  if (!window.confirm(`Delete Tank ${tank.tankNumber} from ${paddock.name}?`)) return;
-  paddock.tanks = paddock.tanks.filter((record) => record.id !== tankId);
-  bumpContentRevision(paddock);
-  const saved = persistStore();
-  renderPaddocks();
-  if (!saved) return;
-  showToast(`Tank ${tank.tankNumber} deleted.`);
+  if (storageWriteLocked || pendingPersistence.records) {
+    showToast("Resolve unsaved or protected records before deleting a tank.");
+    return;
+  }
+  if (!window.confirm(`Delete Tank ${tank.tankNumber} from ${paddock.name}? Undo will keep only this most recent deletion while saved records remain unchanged.`)) return;
+  try {
+    store = deleteTankWithRecovery(store, paddockId, tankId);
+    if (editingTankContext?.tankId === tankId) { clearEditingState(); rememberCalculation(); }
+    document.querySelector("#tank-undo-error").hidden = true;
+    renderPaddocks();
+    showToast(`Tank ${tank.tankNumber} deleted. Undo tank deletion is available above the paddocks.`);
+  } catch (error) {
+    reconcileRecoveryFailure();
+    const message = document.querySelector("#tank-undo-error");
+    document.querySelector("#tank-undo").hidden = false;
+    message.textContent = `Deletion could not be confirmed: ${error.message} Reload to check saved records before continuing.`;
+    message.hidden = false;
+  }
 }
 
 function savePaddockNote(paddockId) {
@@ -2225,7 +2407,9 @@ function retryPendingPersistence() {
   let saved = true;
   if (retryRecords) {
     if (!persistStore()) saved = false;
-    else renderPaddocks();
+    else {
+      renderPaddocks();
+    }
   }
   if (retryProfile && !persistOperatorProfile()) saved = false;
   if (retryLibrary) {
@@ -2442,6 +2626,7 @@ openRunDialogButton.addEventListener("click", openRunStartDialog);
 clearButton.addEventListener("click", () => clearCalculation(true));
 cancelEditButton.addEventListener("click", () => {
   clearEditingState();
+  rememberCalculation();
   showToast("Record editing cancelled.");
 });
 saveForm.addEventListener("submit", saveTankRecord);
@@ -2654,9 +2839,79 @@ archivedPaddockList.addEventListener("click", (event) => {
   restorePaddock(button.dataset.paddockId);
 });
 
+document.querySelector("#resume-calculation").addEventListener("click", () => {
+  if (pendingDraft.status !== "ready") return;
+  const freshRecords = inspectPaddockStore();
+  if (!canResumeCalculatorDraft(pendingDraft.value, freshRecords.status === "ready" ? freshRecords.value : store)) {
+    document.querySelector("#resume-calculation").disabled = true;
+    document.querySelector("#draft-recovery-description").textContent = "Saved records or restore history changed or could not be checked. This old draft is retained but cannot safely resume. Start fresh discards it.";
+    return;
+  }
+  const draft = pendingDraft.value;
+  mixVolumeInput.value = draft.mixVolume;
+  sprayRateInput.value = draft.sprayRate;
+  resetProductRows(draft.products.length);
+  [...productList.children].forEach((row, index) => {
+    row.querySelector(".product-name").value = draft.products[index].name;
+    row.querySelector(".product-rate").value = draft.products[index].rateText;
+    row.querySelector(".product-unit").value = draft.products[index].unit;
+  });
+  clearEditingState();
+  pendingDraft = { status: "absent" };
+  showDraftRecovery();
+  calculate();
+  if (draft.wasEditing) draftStatus.textContent += " · Resumed as a new calculation; the original tank was not changed.";
+  mixVolumeInput.focus();
+});
+document.querySelector("#start-fresh-calculation").addEventListener("click", () => {
+  clearStoredDraft();
+  pendingDraft = { status: "absent" };
+  showDraftRecovery();
+  clearCalculation(false);
+});
+document.querySelector("#view-saved-record").addEventListener("click", () => {
+  paddockSearch.value = "";
+  expandedPaddockId = lastSavedPaddockId;
+  requestTopLevelView("paddocks");
+});
+document.querySelector("#prepare-next-tank").addEventListener("click", () => {
+  clearEditingState();
+  lastDraftSignature = null;
+  rememberCalculation();
+  savedTankActions.hidden = true;
+  mixVolumeInput.focus();
+  mixVolumeInput.select();
+  showToast("Mix retained for the next tank. Review tank total, products and units before saving.");
+});
+paddockSearch.addEventListener("input", renderPaddocks);
+document.querySelector("#clear-paddock-search").addEventListener("click", () => {
+  paddockSearch.value = "";
+  renderPaddocks();
+  paddockSearch.focus();
+});
+document.querySelector("#undo-tank-delete").addEventListener("click", () => {
+  if (storageWriteLocked || pendingPersistence.records) return;
+  try {
+    const result = restoreDeletedTank(store);
+    store = result.store;
+    expandedPaddockId = result.paddockId;
+    document.querySelector("#tank-undo-error").hidden = true;
+    renderPaddocks();
+    showToast(`Tank ${result.tank.tankNumber} restored.${result.cleared ? "" : " Recovery cleanup failed; duplicate restoration is blocked."}`);
+  } catch (error) {
+    reconcileRecoveryFailure();
+    const message = document.querySelector("#tank-undo-error");
+    message.textContent = `Recovery was not confirmed: ${error.message} The recovery copy is retained.`;
+    message.hidden = false;
+  }
+});
+
 renderStorageWarnings();
 resetProductRows();
 calculate();
+draftReady = true;
+lastDraftSignature = JSON.stringify(draftInputs());
+showDraftRecovery();
 renderPaddocks();
 renderRunView();
 renderOperatorProfile();

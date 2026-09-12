@@ -3,8 +3,7 @@ export const SERVICING_TEMPLATE = `
   <div class="servicing-root">
     <main class="servicing-shell">
       <header class="servicing-header">
-        <img src="./brand-mark.png" alt="" width="58" height="58" />
-        <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="48" height="48" />
+        <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="55" height="55" />
         <div>
           <p id="servicing-farm-name">Pallathorpe Enterprises</p>
           <h1>4830 Service Record</h1>

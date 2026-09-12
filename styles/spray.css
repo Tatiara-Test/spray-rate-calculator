@@ -17,7 +17,7 @@
 
 * { box-sizing: border-box; }
 :host { display: block; }
-.farmer-assistant-emblem { border-radius: 10px; height: 48px; object-fit: contain; width: 48px; }
+.farmer-assistant-emblem { border-radius: 10px; height: auto; object-fit: contain; width: 60px; flex: 0 0 60px; }
 .spray-root {
   margin: 0;
   min-height: 100vh;
@@ -33,7 +33,7 @@ button, select { cursor: pointer; }
   padding: max(14px, env(safe-area-inset-top)) 14px max(28px, env(safe-area-inset-bottom));
 }
 .brand-header { display: flex; align-items: center; gap: 10px; padding: 2px 2px 12px; }
-.brand-mark { width: 48px; height: 48px; object-fit: contain; flex: 0 0 auto; }
+.brand-header > div { min-width: 0; overflow-wrap: anywhere; }
 .farm-name {
   color: var(--green);
   font-size: 0.86rem;
@@ -48,7 +48,7 @@ h1 { font-size: clamp(1.3rem, 5vw, 1.75rem); line-height: 1.1; margin: 0; }
   border-radius: 12px;
   display: grid;
   gap: 4px;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 12px;
   padding: 4px;
 }
@@ -59,6 +59,8 @@ h1 { font-size: clamp(1.3rem, 5vw, 1.75rem); line-height: 1.1; margin: 0; }
   color: var(--muted);
   font-weight: 800;
   min-height: 44px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 8px 12px;
 }
 .view-switch button.selected {
@@ -1058,6 +1060,7 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
 }
 @media (max-width: 390px) {
   .app-shell { padding-inline: 9px; }
+  .view-switch button { font-size: 0.9rem; padding-inline: 4px; }
   .calculator-card { border-radius: 14px; padding: 13px 11px; }
   .product-row { grid-template-columns: minmax(72px, 0.72fr) minmax(124px, 1.28fr); padding: 7px; }
   .basis-key { margin-left: 0; }
@@ -1084,3 +1087,13 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
 @media (prefers-reduced-motion: no-preference) {
   button, input, select, .product-row { transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
 }
+.calculation-recovery { padding: 14px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--green-soft); }
+.calculation-recovery p { font-size: .9rem; line-height: 1.45; margin: 8px 0; }
+.recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.calculation-recovery button, .paddock-search button { min-height: 44px; padding: 10px 14px; border: 1px solid var(--green); border-radius: 9px; color: var(--green); background: var(--card); font-weight: 700; }
+.recovery-error { color: var(--danger); font-size: .9rem; line-height: 1.4; }
+.draft-status { font-size: .8rem; color: var(--muted); }
+.draft-status:empty { display: none; }
+.paddock-search { display: flex; gap: 8px; align-items: end; margin-bottom: 14px; }
+.paddock-search .field { flex: 1; min-width: 0; }
+.paddock-search input { width: 100%; min-height: 44px; }
