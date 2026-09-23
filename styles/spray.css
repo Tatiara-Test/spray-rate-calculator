@@ -1097,3 +1097,24 @@ h2 { font-size: 1.05rem; margin: 0 0 2px; }
 .paddock-search { display: flex; gap: 8px; align-items: end; margin-bottom: 14px; }
 .paddock-search .field { flex: 1; min-width: 0; }
 .paddock-search input { width: 100%; min-height: 44px; }
+/* Operator flow: keep the current action prominent and setup within reach. */
+.edit-banner { border-width: 2px; margin-bottom: 16px; padding: 14px; }
+.edit-banner strong { font-size: 1rem; }
+.edit-banner span { font-size: 0.82rem; }
+.buffer-paddock-management { border: 1px solid var(--line); border-radius: 12px; margin-top: 16px; padding: 0 11px; }
+.buffer-paddock-management > summary { color: var(--green); cursor: pointer; font-size: 0.86rem; font-weight: 800; min-height: 48px; padding: 14px 0; }
+.buffer-paddock-management .job-paddock-picker { border: 0; margin: 0 0 10px; padding: 0; }
+.active-run-paddocks .job-paddock-controls,
+.run-start-paddocks .job-paddock-controls { grid-template-columns: 1fr; }
+.paddock-details-button,
+.planned-area-notice button { background: var(--card); border: 1.5px solid var(--line); border-radius: 9px; color: var(--text); font-weight: 800; min-height: 44px; padding: 8px 11px; }
+.planned-area-notice { background: var(--yellow-soft); border: 1px solid var(--yellow); border-radius: 10px; display: grid; gap: 10px; font-size: 0.82rem; line-height: 1.45; margin: 0; padding: 12px; }
+.buffer-completion { margin-top: 14px; }
+.run-allocation-row { flex-wrap: wrap; }
+.run-allocation-row > span { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.run-allocation-row button { background: var(--card); border: 1.5px solid var(--line); border-radius: 9px; color: var(--text); font-weight: 800; min-height: 44px; padding: 8px 11px; }
+#paddock-details-form > .dialog-field + .dialog-field { margin-top: 12px; }
+@media (max-width: 420px) {
+  .edit-banner { align-items: flex-start; flex-wrap: wrap; }
+  .controller-grid { grid-template-columns: 1fr; }
+}

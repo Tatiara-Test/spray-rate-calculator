@@ -28,6 +28,7 @@ export const SPRAY_TEMPLATE = `
         <p id="draft-warning" class="recovery-error" role="alert" hidden></p>
         <p id="draft-status" class="draft-status" role="status" aria-live="polite"></p>
         <div id="calculation-workspace">
+        <div class="edit-banner" id="edit-banner" hidden><div><strong id="edit-title">Editing tank record</strong><span>Update the calculation, then save the record.</span></div><button id="cancel-edit" type="button">Cancel edit</button></div>
         <section class="calculator-card" aria-labelledby="mix-heading">
           <div class="section-heading"><span class="step-number">1</span><div><h2 id="mix-heading">Tank mixture</h2><p>Enter the tank total, including all products.</p></div></div>
           <div class="tank-grid">
@@ -41,16 +42,15 @@ export const SPRAY_TEMPLATE = `
           <div class="basis-key" aria-label="Rate type reminder"><span><i class="dot hectare-dot"></i> Per hectare</span><span><i class="dot water-dot"></i> Per 100 L water</span></div>
           <div class="product-list" id="product-list"></div><datalist id="chemical-suggestions"></datalist><p class="error product-name-error" id="product-name-error" role="alert" hidden></p><button class="add-product" id="add-product" type="button">+ Add product 2</button>
         </section>
-        <div class="edit-banner" id="edit-banner" hidden><div><strong id="edit-title">Editing tank record</strong><span>Update the calculation, then save the record.</span></div><button id="cancel-edit" type="button">Cancel edit</button></div>
         <section id="saved-tank-actions" class="calculation-recovery saved-tank-actions" role="status" hidden>
           <strong id="saved-tank-message"></strong><p>The mix stays here for your next tank. Review the tank total, products and units before saving again.</p>
-          <div class="recovery-actions"><button id="view-saved-record" type="button">View saved record</button><button id="prepare-next-tank" type="button">Prepare next tank</button></div>
+          <div class="recovery-actions"><button id="view-saved-record" type="button">View saved record</button><button id="edit-saved-tank" type="button">Edit saved tank</button><button id="prepare-next-tank" type="button">Prepare next tank</button></div>
         </section>
         <button class="save-record-button" id="save-record-button" type="button">Save tank record</button><button class="secondary-record-button" id="start-run-from-calculator" type="button">Start buffer</button><button class="clear-button" id="clear-button" type="button">Clear calculation</button>
         </div>
       </div>
       <section id="run-view" data-view-panel="run" role="tabpanel" hidden aria-labelledby="spray-run-tab">
-        <div class="run-intro"><div><p class="eyebrow">Controller-based allocation</p><h2>Multi-paddock buffer</h2><p>Record each controller boundary as you move between paddocks. The app allocates liquid and products without pretending Camera spray covered the whole paddock.</p></div></div>
+        <div class="run-intro"><div><p class="eyebrow">Allocate litres sprayed</p><h2>Multi-paddock buffer</h2><p>Enter the litres sprayed in each paddock. The app keeps track of the liquid left and allocates products to each paddock.</p></div></div>
         <section class="run-empty-card" id="run-empty-card">
           <strong>No buffer in progress</strong>
           <p id="run-calculation-status">Set up a tank mix in Calculator, then start a buffer.</p>
@@ -59,12 +59,28 @@ export const SPRAY_TEMPLATE = `
         <section class="active-run-card" id="active-run-card" hidden>
           <div class="active-run-heading"><div><p class="eyebrow">Active tank</p><h2 id="active-run-title">Buffer</h2></div><span id="active-run-method"></span></div>
           <div class="run-meta" id="active-run-meta"></div>
+          <form id="run-allocation-form" class="run-allocation-form">
+            <div class="save-grid run-paddock-grid">
+              <label class="dialog-field"><span>Selected paddock</span><select id="run-paddock-name" required></select></label>
+              <label class="dialog-field"><span>Saved total hectares</span><span class="input-with-unit compact-unit-input"><input id="run-paddock-size" type="number" inputmode="decimal" readonly aria-readonly="true" /><b>ha</b></span></label>
+            </div>
+            <p class="run-helper" id="run-selected-plan">Choose a paddock selected for this buffer.</p>
+            <div class="controller-grid">
+              <div><span>Litres remaining</span><strong id="run-controller-before">&mdash;</strong></div>
+              <label class="dialog-field"><span>Litres sprayed in this paddock</span><span class="input-with-unit compact-unit-input"><input id="run-controller-after" type="number" inputmode="decimal" min="0.001" step="any" required aria-describedby="controller-remaining-help" /><b>L</b></span></label>
+            </div>
+            <p class="run-helper" id="controller-remaining-help">Enter only the litres sprayed in the selected paddock. If you sprayed 500 L, enter 500.</p>
+            <p class="run-helper" id="run-allocation-preview">Enter litres sprayed to preview the allocation.</p>
+            <p class="dialog-error" id="run-allocation-error" hidden></p>
+            <button class="confirm-save-button" id="record-run-allocation" type="submit">Save allocation</button>
+          </form>
+          <details class="buffer-paddock-management"><summary>Manage paddocks for this buffer</summary>
           <fieldset class="job-paddock-picker active-run-paddocks">
             <legend>Paddocks selected for this buffer</legend>
             <div class="job-paddock-list" id="active-run-selected-paddocks" aria-live="polite"></div>
             <div class="job-paddock-controls">
               <label class="dialog-field"><span>Select or add a paddock</span><select id="active-run-library-paddock"></select></label>
-              <label class="dialog-field"><span>Planned hectares <small>for this buffer only</small></span><span class="input-with-unit compact-unit-input"><input id="active-run-planned-hectares" type="number" inputmode="decimal" min="0" step="any" placeholder="Optional" /><b>ha</b></span></label>
+              <input id="active-run-planned-hectares" type="hidden" disabled />
               <div class="new-library-paddock-fields" id="active-run-new-paddock-fields" hidden>
                 <label class="dialog-field"><span>New paddock name</span><input id="active-run-new-paddock-name" maxlength="60" autocomplete="off" /></label>
                 <label class="dialog-field"><span>Saved total hectares <small>optional</small></span><span class="input-with-unit compact-unit-input"><input id="active-run-new-paddock-total" type="number" inputmode="decimal" min="0" step="any" /><b>ha</b></span></label>
@@ -73,24 +89,14 @@ export const SPRAY_TEMPLATE = `
             </div>
             <p class="dialog-error" id="active-run-paddock-error" hidden></p>
           </fieldset>
-          <form id="run-allocation-form" class="run-allocation-form">
-            <div class="save-grid run-paddock-grid">
-              <label class="dialog-field"><span>Selected paddock</span><select id="run-paddock-name" required></select></label>
-              <label class="dialog-field"><span>Saved total hectares</span><span class="input-with-unit compact-unit-input"><input id="run-paddock-size" type="number" inputmode="decimal" readonly aria-readonly="true" /><b>ha</b></span></label>
-            </div>
-            <p class="run-helper" id="run-selected-plan">Choose a paddock selected for this buffer.</p>
-            <div class="controller-grid">
-              <div><span>Controller before</span><strong id="run-controller-before">&mdash;</strong></div>
-              <label class="dialog-field"><span>Controller remaining (L)</span><span class="input-with-unit compact-unit-input"><input id="run-controller-after" type="number" inputmode="decimal" min="0" step="any" required aria-describedby="controller-remaining-help" /><b>L</b></span></label>
-            </div>
-            <p class="run-helper" id="controller-remaining-help">Enter the litres remaining on the controller. Starting at 2,000 L and using 500 L means entering 1,500 L.</p>
-            <p class="run-helper" id="run-allocation-preview">Enter the next controller reading.</p>
-            <p class="dialog-error" id="run-allocation-error" hidden></p>
-            <button class="confirm-save-button" id="record-run-allocation" type="submit">Record paddock</button>
-          </form>
+          </details>
           <div class="run-allocation-list" id="run-allocation-list"></div>
           <div class="run-finish-actions"><button id="finish-run" type="button">Finish buffer</button><button id="cancel-empty-run" class="danger-button" type="button">Cancel empty buffer</button></div>
-          <p class="run-helper">If the controller increases after a refill, finish this buffer and start a new one.</p>
+          <p class="run-helper">Finish this buffer before refilling, then start a new buffer for the next mix.</p>
+        </section>
+        <section id="buffer-completion" class="calculation-recovery buffer-completion" role="status" hidden>
+          <strong>Buffer finished</strong><p id="buffer-completion-summary"></p>
+          <div class="recovery-actions"><button id="buffer-completion-view" type="button">View paddock records</button><button id="buffer-completion-next" type="button">Prepare next mix</button></div>
         </section>
       </section>
       <section id="paddocks-view" data-view-panel="paddocks" role="tabpanel" hidden aria-labelledby="spray-paddocks-tab">
@@ -123,6 +129,8 @@ export const SPRAY_TEMPLATE = `
           <span><small>Saved total hectares</small><strong id="save-paddock-total">Not set</strong></span>
           <label class="dialog-field"><span>Planned hectares <small>for this tank only</small></span><span class="input-with-unit compact-unit-input"><input id="save-planned-hectares" type="number" inputmode="decimal" min="0" step="any" placeholder="Optional" /><b>ha</b></span></label>
         </div>
+        <button class="paddock-details-button" id="edit-selected-paddock" type="button">Edit paddock details</button>
+        <p class="planned-area-notice" id="planned-area-notice" hidden><span id="planned-area-notice-text"></span><button id="use-calculated-area" type="button">Use calculated area</button></p>
         <p class="job-paddock-help">Changing the planned hectares here never changes the saved paddock total.</p>
       </fieldset>
       <div class="save-summary"><span><small>Tank total</small><strong id="save-tank-total">—</strong></span><span><small>Spray rate</small><strong id="save-spray-rate">—</strong></span><span><small>Calculated area</small><strong id="save-area">—</strong></span></div>
@@ -136,10 +144,10 @@ export const SPRAY_TEMPLATE = `
     </form></dialog>
     <dialog class="save-dialog" id="run-start-dialog" aria-labelledby="run-start-dialog-title"><form method="dialog" class="save-panel" id="run-start-form">
       <div class="dialog-heading"><div><p class="eyebrow">New multi-paddock tank</p><h2 id="run-start-dialog-title">Start buffer</h2></div><button class="close-dialog" type="button" id="close-run-start-dialog" aria-label="Close">&times;</button></div>
-      <p class="review-help">The mix is snapshotted from Calculator. Record the controller reading each time you leave a paddock.</p>
+      <p class="review-help">The current calculator mix is used for this buffer. Enter the litres sprayed each time you leave a paddock.</p>
       <div class="save-grid">
         <label class="dialog-field"><span>Spray date</span><input id="run-date" type="date" required /></label>
-        <label class="dialog-field"><span>Controller start</span><span class="input-with-unit compact-unit-input"><input id="run-controller-start" type="number" inputmode="decimal" min="0" step="any" required /><b>L</b></span></label>
+        <label class="dialog-field"><span>Starting litres</span><span class="input-with-unit compact-unit-input"><input id="run-controller-start" type="number" inputmode="decimal" min="0" step="any" required /><b>L</b></span></label>
       </div>
       <div class="record-meta-grid">
         <label class="dialog-field"><span>Operator <small>optional until sharing</small></span><input id="run-operator" maxlength="80" autocomplete="name" /></label>
@@ -148,10 +156,10 @@ export const SPRAY_TEMPLATE = `
       </div>
       <fieldset class="job-paddock-picker run-start-paddocks">
         <legend>Paddocks for this buffer</legend>
-        <p class="job-paddock-help">Add only paddocks planned for this buffer. Saved total hectares and planned hectares stay separate.</p>
+        <p class="job-paddock-help">Select the paddocks you will spray. You can add more while the buffer is active.</p>
         <div class="job-paddock-controls">
           <label class="dialog-field"><span>Select or add a paddock</span><select id="run-start-library-paddock"></select></label>
-          <label class="dialog-field"><span>Planned hectares <small>for this buffer only</small></span><span class="input-with-unit compact-unit-input"><input id="run-start-planned-hectares" type="number" inputmode="decimal" min="0" step="any" placeholder="Optional" /><b>ha</b></span></label>
+          <input id="run-start-planned-hectares" type="hidden" disabled />
           <div class="new-library-paddock-fields" id="run-start-new-paddock-fields" hidden>
             <label class="dialog-field"><span>New paddock name</span><input id="run-start-new-paddock-name" maxlength="60" autocomplete="off" /></label>
             <label class="dialog-field"><span>Saved total hectares <small>optional</small></span><span class="input-with-unit compact-unit-input"><input id="run-start-new-paddock-total" type="number" inputmode="decimal" min="0" step="any" /><b>ha</b></span></label>
@@ -163,6 +171,24 @@ export const SPRAY_TEMPLATE = `
       </fieldset>
       <div class="save-summary"><span><small>Mix total</small><strong id="run-mix-total">&mdash;</strong></span><span><small>Spray rate</small><strong id="run-spray-rate">&mdash;</strong></span><span><small>Products</small><strong id="run-product-count">0</strong></span></div>
       <p class="dialog-error" id="run-start-error" hidden></p><button class="confirm-save-button" id="confirm-start-run" type="submit">Start buffer</button><button class="dialog-cancel-button" id="cancel-run-start" type="button">Cancel</button>
+    </form></dialog>
+    <dialog class="save-dialog" id="paddock-details-dialog" aria-labelledby="paddock-details-title"><form method="dialog" class="save-panel" id="paddock-details-form">
+      <div class="dialog-heading"><div><p class="eyebrow">Paddock Library</p><h2 id="paddock-details-title">Edit paddock details</h2></div></div>
+      <p class="review-help">Update the library name and total hectares for this selection and future jobs. Previously saved tank details stay as recorded.</p>
+      <label class="dialog-field"><span>Paddock name</span><input id="paddock-details-name" maxlength="60" autocomplete="off" required /></label>
+      <label class="dialog-field"><span>Total hectares <small>optional</small></span><span class="input-with-unit compact-unit-input"><input id="paddock-details-total" type="number" inputmode="decimal" min="0" step="any" /><b>ha</b></span></label>
+      <p class="dialog-error" id="paddock-details-error" hidden></p><button class="confirm-save-button" type="submit">Save paddock details</button><button class="dialog-cancel-button" id="cancel-paddock-details" type="button">Cancel</button>
+    </form></dialog>
+    <dialog class="save-dialog" id="finish-buffer-dialog" aria-labelledby="finish-buffer-title"><form method="dialog" class="save-panel" id="finish-buffer-form">
+      <h2 id="finish-buffer-title">Finish Buffer</h2><p id="finish-buffer-summary"></p><p class="dialog-error" id="finish-buffer-error" hidden></p>
+      <button class="confirm-save-button" type="submit">Finish Buffer</button><button class="dialog-cancel-button" id="cancel-finish-buffer" type="button">Back</button>
+    </form></dialog>
+    <dialog class="save-dialog" id="buffer-correction-dialog" aria-labelledby="buffer-correction-title"><form method="dialog" class="save-panel" id="buffer-correction-form">
+      <div class="dialog-heading"><div><p class="eyebrow">Buffer allocation</p><h2 id="buffer-correction-title">Correct litres sprayed</h2></div></div>
+      <p class="review-help" id="buffer-correction-description"></p>
+      <label class="dialog-field"><span>Litres sprayed in this paddock</span><span class="input-with-unit compact-unit-input"><input id="buffer-correction-litres" type="number" inputmode="decimal" min="0.001" step="any" required /><b>L</b></span></label>
+      <p class="run-helper" id="buffer-correction-preview" aria-live="polite"></p><p class="dialog-error" id="buffer-correction-error" hidden></p>
+      <button class="confirm-save-button" type="submit">Save correction</button><button class="dialog-cancel-button" id="cancel-buffer-correction" type="button">Cancel</button>
     </form></dialog>
     <dialog class="save-dialog" id="share-review-dialog" aria-labelledby="share-review-dialog-title"><form method="dialog" class="save-panel" id="share-review-form">
       <div class="dialog-heading"><div><p class="eyebrow">Review before sharing</p><h2 id="share-review-dialog-title">Complete tank details</h2></div><button class="close-dialog" type="button" id="close-share-review" aria-label="Close">×</button></div>

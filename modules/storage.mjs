@@ -1,3 +1,4 @@
+import { normalizeRunAllocationCorrections } from "./paddock-runs.mjs";
 import {
   PADDOCK_LIBRARY_VERSION,
   normalizeLibraryName,
@@ -349,6 +350,9 @@ export function normalizePaddockStore(input) {
     const propertySnapshot = Object.hasOwn(run, "propertySnapshot")
       ? normalizePropertyIdentitySnapshot(run.propertySnapshot)
       : null;
+    const allocationCorrections = Object.hasOwn(run, "allocationCorrections")
+      ? normalizeRunAllocationCorrections({ ...run, allocations, controllerStartLitres })
+      : undefined;
     return {
       ...cloneJson(run),
       id,
@@ -367,6 +371,7 @@ export function normalizePaddockStore(input) {
       sprayRate,
       products,
       allocations,
+      ...(allocationCorrections !== undefined ? { allocationCorrections } : {}),
       ...(selectedPaddocks ? { selectedPaddocks } : {}),
       ...(Object.hasOwn(run, "propertySnapshot") ? { propertySnapshot } : {}),
     };

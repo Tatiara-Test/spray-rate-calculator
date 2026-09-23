@@ -301,8 +301,8 @@ export function buildPaddockCsv(paddock, descriptor) {
       "Operator",
       "Machine",
       "Application",
-      "Controller before (L)",
-      "Controller after (L)",
+      "Buffer balance before (L)",
+      "Buffer balance after (L)",
       "Tank total (L)",
       "Spray rate (L/ha)",
       "Reported area (ha)",
@@ -393,7 +393,7 @@ function recordDetailLines(tank) {
     `Liquid ${numberText(tank.tankTotal, "L")} | Spray rate ${numberText(tank.sprayRate, "L/ha")} | Reported area ${tank.sprayMethod === "Camera" ? "not used for unique-ground coverage" : numberText(tank.hectares, "ha")}`,
   ];
   if (tank.recordType === "run-allocation") {
-    details.push(`Controller ${numberText(tank.controllerBeforeLitres, "L")} to ${numberText(tank.controllerAfterLitres, "L")}`);
+    details.push(`Buffer balance ${numberText(tank.controllerBeforeLitres, "L")} to ${numberText(tank.controllerAfterLitres, "L")}`);
   }
   return details;
 }

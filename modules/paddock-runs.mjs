@@ -108,6 +108,9 @@ function cloneRun(run) {
     products: (run.products || []).map(cloneProduct),
     allocations: (run.allocations || []).map(cloneAllocation),
   };
+  if (Object.hasOwn(run, "allocationCorrections")) {
+    cloned.allocationCorrections = normalizeRunAllocationCorrections(run);
+  }
   if (Object.hasOwn(run, "selectedPaddocks")) {
     cloned.selectedPaddocks = cloneSelectedPaddocks(run.selectedPaddocks);
   }
@@ -146,6 +149,7 @@ function assertRun(run) {
     : null;
   if (Object.hasOwn(run, "propertySnapshot")) normalizePropertyIdentitySnapshot(run.propertySnapshot);
   if (!Array.isArray(run.allocations)) throw new TypeError("Buffer allocations must be an array.");
+  if (Object.hasOwn(run, "allocationCorrections")) normalizeRunAllocationCorrections(run);
 
   let before = Number(run.controllerStartLitres);
   const ids = new Set();
@@ -314,6 +318,95 @@ export function addRunAllocation(run, input = {}) {
     updatedAt,
   });
   next.updatedAt = updatedAt;
+  return next;
+}
+
+export function normalizeRunAllocationCorrections(run) {
+  if (!Array.isArray(run.allocationCorrections)) {
+    throw new TypeError("Buffer allocation corrections must be an array.");
+  }
+  return run.allocationCorrections.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new TypeError("Buffer allocation correction must be a record.");
+    }
+    if (Object.keys(entry).some((key) => !["allocationId", "previousLitresUsed", "litresUsed", "updatedAt", "reason"].includes(key))) {
+      throw new TypeError("Buffer allocation correction has an unexpected field.");
+    }
+    if (typeof entry.allocationId !== "string" || !entry.allocationId.trim()
+      || !run.allocations.some((allocation) => allocation.id === entry.allocationId)) {
+      throw new TypeError("Buffer allocation correction must reference an existing allocation.");
+    }
+    for (const key of ["previousLitresUsed", "litresUsed"]) {
+      if (typeof entry[key] !== "number" || !Number.isFinite(entry[key]) || entry[key] <= 0
+        || entry[key] > Number(run.controllerStartLitres)) {
+        throw new TypeError("Buffer allocation correction litres must be positive finite numbers within the buffer capacity.");
+      }
+    }
+    if (typeof entry.updatedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(entry.updatedAt)
+      || !Number.isFinite(Date.parse(entry.updatedAt))) {
+      throw new TypeError("Buffer allocation correction timestamp must be a valid date and time.");
+    }
+    if (entry.reason !== undefined && entry.reason !== null && typeof entry.reason !== "string") {
+      throw new TypeError("Buffer allocation correction reason must be text or null.");
+    }
+    return { ...entry };
+  });
+}
+
+function positiveSprayedLitres(value) {
+  if (
+    typeof value !== "number"
+    && (typeof value !== "string" || !/^\+?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim()))
+  ) {
+    throw new TypeError("Litres sprayed must be a positive number.");
+  }
+  return finiteNumber(value, "Litres sprayed", { exclusiveMinimum: true });
+}
+
+// Keep the stored cumulative boundary schema so legacy records and reports agree.
+export function addRunLitresAllocation(run, input = {}) {
+  assertActive(run);
+  const litresUsed = positiveSprayedLitres(input.litresUsed);
+  const remaining = finalControllerReading(run);
+  if (litresUsed > remaining) {
+    throw new RangeError("Litres sprayed cannot exceed the liquid remaining in this buffer.");
+  }
+  return addRunAllocation(run, { ...input, controllerAfterLitres: remaining - litresUsed });
+}
+
+export function correctRunLitresAllocation(run, allocationId, input = {}) {
+  assertRun(run);
+  if (![ACTIVE, "completed"].includes(run.status)) {
+    throw new Error("Only an active or completed buffer can be corrected.");
+  }
+  const id = requiredText(allocationId, "Allocation id");
+  const index = run.allocations.findIndex((allocation) => allocation.id === id);
+  if (index < 0) throw new RangeError(`Allocation ${id} does not exist in this buffer.`);
+  const litresUsed = positiveSprayedLitres(input.litresUsed);
+  const updatedAt = timestampFrom(input, "updatedAt");
+  const records = materializeRunAllocations(run);
+  const previousLitresUsed = records[index].litresUsed;
+  const amounts = records.map((record, position) => position === index ? litresUsed : record.litresUsed);
+  if (amounts.reduce((sum, amount) => sum + amount, 0) > Number(run.controllerStartLitres)) {
+    throw new RangeError("Total litres sprayed cannot exceed the buffer starting litres.");
+  }
+  const next = cloneRun(run);
+  let remaining = Number(next.controllerStartLitres);
+  next.allocations.forEach((allocation, position) => {
+    remaining -= amounts[position];
+    allocation.controllerAfterLitres = remaining;
+  });
+  next.allocations[index].updatedAt = updatedAt;
+  next.updatedAt = updatedAt;
+  if (next.status === "completed") next.controllerFinalLitres = remaining;
+  next.allocationCorrections = [...(next.allocationCorrections || []), {
+    allocationId: id,
+    previousLitresUsed,
+    litresUsed,
+    updatedAt,
+    reason: cleanText(input.reason) || null,
+  }];
+  assertRun(next);
   return next;
 }
 

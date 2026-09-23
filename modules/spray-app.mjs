@@ -23,6 +23,7 @@ import {
   createSelectedPaddockSnapshot,
   findLibraryEntryById,
   findLibraryEntryByName,
+  updateLibraryEntry,
 } from "./paddock-library.mjs";
 import { calculatePaddockBalance } from "./paddock-balance.mjs";
 import {
@@ -37,6 +38,8 @@ import {
 import {
   SPRAY_METHODS,
   addRunAllocation,
+  addRunLitresAllocation,
+  correctRunLitresAllocation,
   allowedSprayMethods,
   cancelEmptyPaddockRun,
   completePaddockRun,
@@ -217,6 +220,10 @@ let draftReady = false;
 let pendingDraft = inspectCalculatorDraft();
 let lastDraftSignature = null;
 let lastSavedPaddockId = null;
+let lastSavedTankId = null;
+let paddockDetailsContext = null;
+let bufferCorrectionContext = null;
+let finishBufferContext = null;
 let pendingTankSave = null;
 const draftRecovery = document.querySelector("#draft-recovery");
 const draftStatus = document.querySelector("#draft-status");
@@ -945,6 +952,7 @@ function finalizeTankSave(completion) {
   } catch { /* Preserve the draft if its identity cannot be checked. */ }
   if (sameInputs && sameDraft) clearStoredDraft();
   lastSavedPaddockId = completion.paddockId;
+  lastSavedTankId = completion.tankId;
   document.querySelector("#saved-tank-message").textContent = sameInputs
     ? completion.message : `${completion.message}. Your newer calculation has been kept.`;
   document.querySelector("#prepare-next-tank").hidden = !sameInputs;
@@ -1237,6 +1245,8 @@ function openSaveDialog() {
     saveProductList.append(row);
   });
 
+  updatePlannedAreaNotice();
+  document.querySelector("#edit-selected-paddock").disabled = !defaultLibraryEntry;
   saveDialog.showModal();
   (saveNewPaddockFields.hidden ? saveLibraryPaddock : savePaddockName).focus();
 }
@@ -1485,7 +1495,7 @@ function renderJobPaddockList(container, selections, { removable = false } = {})
   }
   container.innerHTML = selections.map((selection) => `
     <div class="job-paddock-row">
-      <span><strong>${escapeHtml(selection.name)}</strong><small>Saved total: ${escapeHtml(formatOptionalHectares(selection.totalHectares))} · Planned: ${escapeHtml(formatOptionalHectares(selection.plannedHectares))}</small></span>
+      <span><strong>${escapeHtml(selection.name)}</strong><small>Paddock total: ${escapeHtml(formatOptionalHectares(selection.totalHectares))}</small></span>
       ${removable ? `<button type="button" data-remove-run-selection="${escapeHtml(selection.libraryEntryId)}" aria-label="Remove ${escapeHtml(selection.name)} from this buffer">Remove</button>` : ""}
     </div>
   `).join("");
@@ -1504,7 +1514,7 @@ function addPendingRunSelection() {
   runStartPaddockError.hidden = true;
   const selection = resolveOperationalSelection({
     select: runStartLibraryPaddock,
-    plannedField: runStartPlannedHectares,
+    plannedField: null,
     newNameField: runStartNewPaddockName,
     newTotalField: runStartNewPaddockTotal,
     errorElement: runStartPaddockError,
@@ -1526,10 +1536,11 @@ function addPendingRunSelection() {
 function addActiveRunSelection() {
   const run = getActiveRun();
   if (!run) return;
+  if (!canChangeBuffer(activeRunPaddockError)) return;
   activeRunPaddockError.hidden = true;
   const selection = resolveOperationalSelection({
     select: activeRunLibraryPaddock,
-    plannedField: activeRunPlannedHectares,
+    plannedField: null,
     newNameField: activeRunNewPaddockName,
     newTotalField: activeRunNewPaddockTotal,
     errorElement: activeRunPaddockError,
@@ -1564,7 +1575,7 @@ function updateRunSelectedPaddockDetails() {
   const selection = selectedRunPaddock(run, runPaddockName.value);
   runPaddockSize.value = selection?.totalHectares || "";
   runSelectedPlan.textContent = selection
-    ? `Saved total ${formatOptionalHectares(selection.totalHectares)} · planned ${formatOptionalHectares(selection.plannedHectares)} for this buffer.`
+    ? `Paddock total ${formatOptionalHectares(selection.totalHectares)}. Enter litres sprayed, not hectares.`
     : "Choose a paddock selected for this buffer.";
 }
 
@@ -1606,6 +1617,7 @@ function openRunStartDialog() {
 function startPaddockRun(event) {
   event.preventDefault();
   if (confirmStartRun.disabled || getActiveRun()) return;
+  if (!canChangeBuffer(runStartError)) return;
   confirmStartRun.disabled = true;
   runStartError.hidden = true;
   const calculation = getCalculation();
@@ -1623,10 +1635,10 @@ function startPaddockRun(event) {
     || pendingRunSelections.length === 0
   ) {
     runStartError.textContent = pendingRunSelections.length === 0
-      ? "Add at least one paddock planned for this buffer."
+      ? "Add at least one paddock for this buffer."
       : controllerStartLitres > 5000
-      ? "Controller start cannot exceed 5,000 litres."
-      : "Complete the date, controller start, machine and compatible application method.";
+      ? "Starting litres cannot exceed 5,000 litres."
+      : "Complete the date, starting litres, machine and compatible application method.";
     runStartError.hidden = false;
     confirmStartRun.disabled = false;
     return;
@@ -1675,7 +1687,7 @@ function startPaddockRun(event) {
     runStartDialog.close();
     requestTopLevelView("run");
     renderRunView();
-    if (recordsSaved) showToast(`Buffer ${run.runNumber} started. Record the first controller boundary.`);
+    if (recordsSaved) showToast(`Buffer ${run.runNumber} started. Enter litres sprayed in the first paddock.`);
   } catch (error) {
     runStartError.textContent = error?.message || "The buffer could not be started.";
     runStartError.hidden = false;
@@ -1729,23 +1741,164 @@ function currentRunController(run) {
     : Number(run.controllerStartLitres);
 }
 
+function canChangeBuffer(errorElement) {
+  const current = inspectPaddockStore();
+  const changed = current.status === "ready"
+    ? JSON.stringify(current.value) !== JSON.stringify(normalizePaddockStore(store))
+    : current.status !== "absent" || store.paddocks.length > 0 || store.runs.length > 0;
+  if (storageWriteLocked || pendingPersistence.records || changed) {
+    errorElement.textContent = "Saved records changed or a save is pending. Retry saving or reload and review before changing this Buffer.";
+    errorElement.hidden = false;
+    return false;
+  }
+  return true;
+}
+
+function openBufferCorrection(runId, allocationId) {
+  const run = store.runs.find((item) => item.id === runId);
+  const record = run && materializeRunAllocations(run).find((item) => item.id === allocationId);
+  if (!record || run.status === "cancelled") return;
+  if (runControllerAfter.value.trim() !== "") {
+    requestTopLevelView("run");
+    showToast("Save or clear the unsaved litres-sprayed entry before correcting an allocation.");
+    return;
+  }
+  bufferCorrectionContext = { runId, allocationId, original: JSON.stringify(run) };
+  document.querySelector("#buffer-correction-description").textContent = `Buffer ${run.runNumber} · ${record.paddockName}. Other allocations keep their sprayed litres. This correction updates this paddock's product quantities and the Buffer balance; a correction history is retained.`;
+  document.querySelector("#buffer-correction-litres").value = record.litresUsed;
+  document.querySelector("#buffer-correction-error").hidden = true;
+  updateBufferCorrectionPreview();
+  document.querySelector("#buffer-correction-dialog").showModal();
+}
+
+function updateBufferCorrectionPreview() {
+  const context = bufferCorrectionContext;
+  if (!context) return;
+  const run = store.runs.find((item) => item.id === context.runId);
+  const preview = document.querySelector("#buffer-correction-preview");
+  try {
+    const next = correctRunLitresAllocation(run, context.allocationId, {
+      litresUsed: document.querySelector("#buffer-correction-litres").value,
+      updatedAt: new Date().toISOString(),
+    });
+    const remaining = currentRunController(next);
+    preview.textContent = `After correction: ${twoDecimals.format(next.controllerStartLitres - remaining)} L sprayed · ${twoDecimals.format(remaining)} L remaining. Other allocations are unchanged.`;
+  } catch (error) { preview.textContent = error.message; }
+}
+
+function saveBufferCorrection(event) {
+  event.preventDefault();
+  const context = bufferCorrectionContext;
+  if (!context) return;
+  const errorElement = document.querySelector("#buffer-correction-error");
+  errorElement.hidden = true;
+  if (!canChangeBuffer(errorElement)) return;
+  const run = store.runs.find((item) => item.id === context.runId);
+  try {
+    if (!run || JSON.stringify(run) !== context.original) throw new Error("This Buffer changed. Close and reopen the correction.");
+    const next = correctRunLitresAllocation(run, context.allocationId, {
+      litresUsed: document.querySelector("#buffer-correction-litres").value,
+      updatedAt: new Date().toISOString(), reason: "Operator corrected litres sprayed",
+    });
+    store.runs[store.runs.findIndex((item) => item.id === run.id)] = next;
+    const beforeRecords = materializeRunAllocations(run);
+    const affectedPaddocks = new Set(materializeRunAllocations(next)
+      .filter((record, index) => JSON.stringify(record) !== JSON.stringify(beforeRecords[index]))
+      .map((record) => record.paddockId));
+    for (const paddockId of affectedPaddocks) {
+      const paddock = findPaddock(paddockId);
+      if (paddock) bumpContentRevision(paddock);
+    }
+    const saved = persistStore();
+    document.querySelector("#buffer-correction-dialog").close();
+    bufferCorrectionContext = null;
+    renderRunView(); renderPaddocks();
+    if (saved) showToast("Correction saved. Paddock totals and chemical quantities updated.");
+  } catch (error) { errorElement.textContent = error.message; errorElement.hidden = false; }
+}
+
+function updatePlannedAreaNotice() {
+  const planned = optionalPositiveValue(savePlannedHectares);
+  const calculated = getCalculation().hectares;
+  const mismatch = saveSprayMethod.value === "Broadacre" && Number.isFinite(planned) && Math.abs(planned - calculated) > 0.005;
+  document.querySelector("#planned-area-notice").hidden = !mismatch;
+  document.querySelector("#planned-area-notice-text").textContent = mismatch
+    ? `Planned ${twoDecimals.format(planned)} ha differs from calculated ${twoDecimals.format(calculated)} ha. Keep your plan, or use the calculated area. Changing the plan does not change this mix.` : "";
+}
+
+function libraryEntryForPaddock(paddock) {
+  if (!paddock) return null;
+  const linkedIds = (paddock.tanks || []).map((tank) => tank.paddockSelection?.libraryEntryId).filter(Boolean);
+  for (const run of store.runs) {
+    for (const allocation of run.allocations.filter((item) => item.paddockId === paddock.id)) {
+      const selection = (run.selectedPaddocks || []).find((item) => normalizeName(item.name) === normalizeName(allocation.paddockName));
+      if (selection) linkedIds.push(selection.libraryEntryId);
+    }
+  }
+  for (const id of linkedIds) {
+    const entry = findLibraryEntryById(paddockLibrary, id);
+    if (entry) return entry;
+  }
+  const seeded = paddockLibrary.entries.find((entry) => entry.sourcePaddockId === paddock.id);
+  if (seeded) return seeded;
+  // A lost explicit link must not silently bind to a different paddock reusing its old name.
+  return linkedIds.length ? null : findLibraryEntryByName(paddockLibrary, paddock.name);
+}
+
+function openPaddockDetails(entryId) {
+  refreshPaddockLibrary();
+  const entry = findLibraryEntryById(paddockLibrary, entryId);
+  if (!entry || libraryMutationLocked()) { showToast("Paddock details are unavailable. Review the Paddock Library in Settings."); return; }
+  paddockDetailsContext = { entryId, original: JSON.stringify(paddockLibrary) };
+  document.querySelector("#paddock-details-name").value = entry.name;
+  document.querySelector("#paddock-details-total").value = entry.totalHectares ?? "";
+  document.querySelector("#paddock-details-error").hidden = true;
+  document.querySelector("#paddock-details-dialog").showModal();
+}
+
+function savePaddockDetails(event) {
+  event.preventDefault();
+  const errorElement = document.querySelector("#paddock-details-error");
+  const context = paddockDetailsContext;
+  if (!context) return;
+  try {
+    refreshPaddockLibrary();
+    if (libraryMutationLocked() || pendingPersistence.library || JSON.stringify(paddockLibrary) !== context.original) throw new Error("The library changed or a save is pending. Close and reopen this editor.");
+    const entry = findLibraryEntryById(paddockLibrary, context.entryId);
+    const name = document.querySelector("#paddock-details-name").value;
+    const totalHectares = optionalPositiveValue(document.querySelector("#paddock-details-total"));
+    if (Number.isNaN(totalHectares)) throw new Error("Paddock total must be blank or greater than zero.");
+    const duplicate = findLibraryEntryByName(paddockLibrary, name, { includeArchived: true });
+    if (duplicate && duplicate.id !== entry.id) throw new Error("That paddock name already exists in the library.");
+    const updated = updateLibraryEntry(entry, { name, totalHectares }, new Date().toISOString());
+    const next = { ...paddockLibrary, entries: paddockLibrary.entries.map((item) => item.id === entry.id ? updated : item) };
+    if (!persistLibrary(next)) throw new Error("Paddock change is not saved yet. Close this editor and use Retry saving.");
+    document.querySelector("#paddock-details-dialog").close();
+    paddockDetailsContext = null;
+    if (saveDialog.open) {
+      populateLibrarySelect(saveLibraryPaddock, { selectedId: updated.id, includeHistoryFallback: true });
+      savePaddockTotal.textContent = formatOptionalHectares(updated.totalHectares);
+    }
+    showToast("Paddock library updated. Existing saved records and active Buffer snapshots are unchanged.");
+  } catch (error) { errorElement.textContent = error.message; errorElement.hidden = false; }
+}
+
 function updateRunAllocationPreview() {
   const run = getActiveRun();
   if (!run) return;
   const before = currentRunController(run);
-  const after = Number(runControllerAfter.value);
-  if (runControllerAfter.value === "" || !Number.isFinite(after)) {
-    runAllocationPreview.textContent = "Enter the litres remaining on the controller.";
+  const used = Number(runControllerAfter.value);
+  if (runControllerAfter.value === "" || !Number.isFinite(used)) {
+    runAllocationPreview.textContent = "Enter litres sprayed in this paddock (for example, 500).";
     return;
   }
-  if (after < 0 || after > before) {
-    runAllocationPreview.textContent = "The reading must stay between zero and the controller-before value.";
+  if (used <= 0 || used > before) {
+    runAllocationPreview.textContent = `Enter more than zero and no more than ${twoDecimals.format(before)} L available.`;
     return;
   }
-  const used = before - after;
   runAllocationPreview.textContent = run.sprayMethod === "Broadacre"
-    ? `${twoDecimals.format(used)} L used · ${twoDecimals.format(used / run.sprayRate)} ha allocated`
-    : `${twoDecimals.format(used)} L allocated · Camera spray does not calculate whole-paddock hectares`;
+    ? `${twoDecimals.format(used)} L sprayed · ${twoDecimals.format(used / run.sprayRate)} calculated ha · ${twoDecimals.format(before - used)} L remaining`
+    : `${twoDecimals.format(used)} L sprayed · ${twoDecimals.format(before - used)} L remaining · Camera: no measured ground area`;
 }
 
 function recordRunAllocation(event) {
@@ -1753,33 +1906,32 @@ function recordRunAllocation(event) {
   const run = getActiveRun();
   if (!run) return;
   runAllocationError.hidden = true;
+  if (!canChangeBuffer(runAllocationError)) return;
   const selection = selectedRunPaddock(run, runPaddockName.value);
   const paddockName = selection?.name || "";
   const paddockSize = selection?.totalHectares ?? null;
   const before = currentRunController(run);
-  const after = Number(runControllerAfter.value);
+  const used = Number(runControllerAfter.value);
   if (
     !selection
     || runControllerAfter.value === ""
-    || !Number.isFinite(after)
-    || after < 0
-    || after >= before
+    || !Number.isFinite(used)
+    || used <= 0
+    || used > before
   ) {
-    runAllocationError.textContent = after === before
-        ? "The controller reading has not changed; no liquid can be allocated."
-        : "Choose a paddock selected for this buffer and enter Controller remaining (L) below the controller-before value.";
+    runAllocationError.textContent = `Choose a paddock and enter litres sprayed greater than zero, up to ${twoDecimals.format(before)} L available.`;
     runAllocationError.hidden = false;
     return;
   }
   try {
     const { paddock } = ensureRunPaddock(paddockName, paddockSize, selection);
     const timestamp = new Date().toISOString();
-    const updatedRun = addRunAllocation(run, {
+    const updatedRun = addRunLitresAllocation(run, {
       id: newId(),
       paddockId: paddock.id,
       paddockName: selection.name,
       paddockSizeHectares: selection.totalHectares,
-      controllerAfterLitres: after,
+      litresUsed: used,
       savedAt: timestamp,
     });
     store.runs[store.runs.findIndex((item) => item.id === run.id)] = updatedRun;
@@ -1791,7 +1943,7 @@ function recordRunAllocation(event) {
     refreshSuggestions();
     renderRunView();
     renderPaddocks();
-    if (saved) showToast(`${twoDecimals.format(before - after)} litres allocated to ${paddock.name}.`);
+    if (saved) showToast(`${twoDecimals.format(used)} litres sprayed allocated to ${paddock.name}.`);
   } catch (error) {
     runAllocationError.textContent = error?.message || "The paddock allocation could not be recorded.";
     runAllocationError.hidden = false;
@@ -1801,16 +1953,40 @@ function recordRunAllocation(event) {
 function finishActiveRun() {
   const run = getActiveRun();
   if (!run) return;
+  if (!canChangeBuffer(runAllocationError)) return;
+  if (runControllerAfter.value.trim() !== "") {
+    runAllocationError.textContent = "This litres-sprayed entry is not saved. Save the allocation, or clear the entry before finishing.";
+    runAllocationError.hidden = false;
+    runControllerAfter.focus();
+    return;
+  }
   if (!run.allocations.length) {
     runAllocationError.textContent = "Record at least one paddock, or cancel the empty buffer.";
     runAllocationError.hidden = false;
     return;
   }
-  if (!window.confirm(`Finish Buffer ${run.runNumber} at ${twoDecimals.format(currentRunController(run))} litres remaining?`)) return;
+  finishBufferContext = { id: run.id, original: JSON.stringify(run) };
+  document.querySelector("#finish-buffer-summary").textContent = `Finish Buffer ${run.runNumber}? ${twoDecimals.format(run.controllerStartLitres - currentRunController(run))} L sprayed; ${twoDecimals.format(currentRunController(run))} L remaining. Remaining liquid is not allocated automatically.`;
+  document.querySelector("#finish-buffer-error").hidden = true;
+  document.querySelector("#finish-buffer-dialog").showModal();
+}
+
+function confirmFinishBuffer(event) {
+  event.preventDefault();
+  const run = getActiveRun();
+  const errorElement = document.querySelector("#finish-buffer-error");
+  if (!run || !finishBufferContext || run.id !== finishBufferContext.id || JSON.stringify(run) !== finishBufferContext.original || runControllerAfter.value.trim() !== "") {
+    errorElement.textContent = "The Buffer or unsaved entry changed. Go back and review before finishing.";
+    errorElement.hidden = false;
+    return;
+  }
+  if (!canChangeBuffer(errorElement)) return;
   const completed = completePaddockRun(run, new Date().toISOString());
   store.runs[store.runs.findIndex((item) => item.id === run.id)] = completed;
   store.activeRunId = null;
   const saved = persistStore();
+  finishBufferContext = null;
+  document.querySelector("#finish-buffer-dialog").close();
   renderRunView();
   renderPaddocks();
   if (saved) showToast(`Buffer ${run.runNumber} finished with ${twoDecimals.format(completed.controllerFinalLitres)} litres remaining.`);
@@ -1831,6 +2007,9 @@ function cancelActiveEmptyRun() {
 function renderRunView() {
   const calculation = getCalculation();
   const activeRun = getActiveRun();
+  const completed = !activeRun && [...store.runs].reverse().find((run) => run.status === "completed");
+  document.querySelector("#buffer-completion").hidden = !completed;
+  if (completed) document.querySelector("#buffer-completion-summary").textContent = `${pendingPersistence.records ? "Not saved yet — " : ""}Buffer ${completed.runNumber}: prepared ${twoDecimals.format(completed.controllerStartLitres)} L · sprayed ${twoDecimals.format(completed.controllerStartLitres - completed.controllerFinalLitres)} L · remaining ${twoDecimals.format(completed.controllerFinalLitres)} L. Remaining liquid has not been allocated.`;
   runCalculationStatus.textContent = calculation.valid
     ? `${twoDecimals.format(calculation.litres)} L at ${twoDecimals.format(calculation.sprayRate)} L/ha is ready in Calculator.`
     : "Set up a tank mix in Calculator, then start a buffer.";
@@ -1865,7 +2044,7 @@ function renderRunView() {
   runControllerAfter.max = String(before);
   runAllocationList.innerHTML = activeRun.allocations.length
     ? materializeRunAllocations(activeRun).map((record) => `
-        <div class="run-allocation-row"><span><strong>${escapeHtml(record.paddockName)}</strong><small>${twoDecimals.format(record.controllerBeforeLitres)} → ${twoDecimals.format(record.controllerAfterLitres)} L</small></span><b>${twoDecimals.format(record.litresUsed)} L${record.sprayMethod === "Broadacre" ? ` · ${twoDecimals.format(record.hectares)} ha` : " · Camera"}</b></div>
+        <div class="run-allocation-row"><span><strong>${escapeHtml(record.paddockName)}</strong><small>${twoDecimals.format(record.controllerAfterLitres)} L remaining</small></span><b>${twoDecimals.format(record.litresUsed)} L sprayed${record.sprayMethod === "Broadacre" ? ` · ${twoDecimals.format(record.hectares)} ha` : " · Camera"}</b><button type="button" data-correct-run="${escapeHtml(activeRun.id)}" data-allocation-id="${escapeHtml(record.id)}">Correct litres</button></div>
       `).join("")
     : `<p class="no-tanks">No paddocks recorded yet.</p>`;
   finishRunButton.disabled = activeRun.allocations.length === 0;
@@ -1962,11 +2141,11 @@ function renderTankRecord(paddock, tank) {
         <span><small>Operator</small><strong>${escapeHtml(tank.operator || "Not set")}</strong></span>
         <span><small>Machine</small><strong>${escapeHtml(tank.machine || "Not set")}</strong></span>
         <span><small>Application</small><strong>${escapeHtml(tank.sprayMethod || "Needs review")}</strong></span>
-        ${jobSelection ? `<span><small>Saved total</small><strong>${escapeHtml(formatOptionalHectares(jobSelection.totalHectares))}</strong></span><span><small>Planned for job</small><strong>${escapeHtml(formatOptionalHectares(jobSelection.plannedHectares))}</strong></span>` : ""}
-        ${isRunAllocation ? `<span><small>Controller</small><strong>${twoDecimals.format(tank.controllerBeforeLitres)} → ${twoDecimals.format(tank.controllerAfterLitres)} L</strong></span>` : ""}
+        ${jobSelection ? `<span><small>Saved total</small><strong>${escapeHtml(formatOptionalHectares(jobSelection.totalHectares))}</strong></span>${isRunAllocation ? "" : `<span><small>Planned for job</small><strong>${escapeHtml(formatOptionalHectares(jobSelection.plannedHectares))}</strong></span>`}` : ""}
+        ${isRunAllocation ? `<span><small>Buffer balance</small><strong>${twoDecimals.format(tank.controllerBeforeLitres)} → ${twoDecimals.format(tank.controllerAfterLitres)} L</strong></span>` : ""}
       </div>
       <ul class="tank-products">${products}</ul>
-      ${isRunAllocation ? "" : `<div class="record-actions">
+      ${isRunAllocation ? `<div class="record-actions"><button type="button" data-action="correct-buffer" data-run-id="${escapeHtml(tank.runId)}" data-tank-id="${escapeHtml(tank.id)}">Correct litres sprayed</button></div>` : `<div class="record-actions">
         <button type="button" data-action="edit-tank" data-paddock-id="${paddock.id}" data-tank-id="${tank.id}">Edit tank</button>
         <button class="danger-link" type="button" data-action="delete-tank" data-paddock-id="${paddock.id}" data-tank-id="${tank.id}">Delete</button>
       </div>`}
@@ -2161,6 +2340,7 @@ function renderPaddockCard(paddock) {
           ${noteEditor}
         </section>
         <div class="paddock-actions">
+          <button type="button" data-action="edit-paddock-details" data-paddock-id="${paddock.id}">Edit paddock details</button>
           <button type="button" data-action="export-paddock" data-paddock-id="${paddock.id}" ${exportLockedByActiveRun ? "disabled" : ""}>Export paddock</button>
           <button type="button" data-action="share-paddock" data-paddock-id="${paddock.id}" ${exportLockedByActiveRun ? "disabled" : ""}>Share / Save Copy</button>
           ${hasRunAllocation
@@ -2168,7 +2348,7 @@ function renderPaddockCard(paddock) {
             : `<button class="danger-button" type="button" data-action="clear-paddock" data-paddock-id="${paddock.id}" ${exportLockedByActiveRun ? "disabled" : ""}>Clear paddock</button>`}
         </div>
         ${exportLockedByActiveRun ? `<p class="active-run-export-note">Finish the active buffer before exporting, sharing, clearing or archiving this paddock.</p>` : ""}
-        <details class="tank-history">
+        <details class="tank-history" ${expanded && paddock.id === lastSavedPaddockId ? "open" : ""}>
           <summary>Tank and buffer records · ${records.length}</summary>
           ${tankGroups || `<p class="no-tanks">No tank records saved.</p>`}
         </details>
@@ -2409,6 +2589,7 @@ function retryPendingPersistence() {
     if (!persistStore()) saved = false;
     else {
       renderPaddocks();
+      renderRunView();
     }
   }
   if (retryProfile && !persistOperatorProfile()) saved = false;
@@ -2621,16 +2802,48 @@ addProductButton.addEventListener("click", () => {
 });
 
 saveRecordButton.addEventListener("click", openSaveDialog);
+document.querySelector("#edit-saved-tank").addEventListener("click", () => {
+  if (lastSavedPaddockId && lastSavedTankId) editTankRecord(lastSavedPaddockId, lastSavedTankId);
+});
+savePlannedHectares.addEventListener("input", updatePlannedAreaNotice);
+saveSprayMethod.addEventListener("change", updatePlannedAreaNotice);
+document.querySelector("#use-calculated-area").addEventListener("click", () => {
+  savePlannedHectares.value = getCalculation().hectares;
+  updatePlannedAreaNotice();
+});
+document.querySelector("#edit-selected-paddock").addEventListener("click", () => openPaddockDetails(saveLibraryPaddock.value));
+document.querySelector("#paddock-details-form").addEventListener("submit", savePaddockDetails);
+document.querySelector("#cancel-paddock-details").addEventListener("click", () => document.querySelector("#paddock-details-dialog").close());
+document.querySelector("#buffer-correction-form").addEventListener("submit", saveBufferCorrection);
+document.querySelector("#buffer-correction-litres").addEventListener("input", updateBufferCorrectionPreview);
+document.querySelector("#cancel-buffer-correction").addEventListener("click", () => document.querySelector("#buffer-correction-dialog").close());
+runAllocationList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-correct-run]");
+  if (button) openBufferCorrection(button.dataset.correctRun, button.dataset.allocationId);
+});
+document.querySelector("#buffer-completion-view").addEventListener("click", () => requestTopLevelView("paddocks"));
+document.querySelector("#finish-buffer-form").addEventListener("submit", confirmFinishBuffer);
+document.querySelector("#cancel-finish-buffer").addEventListener("click", () => {
+  finishBufferContext = null;
+  document.querySelector("#finish-buffer-dialog").close();
+});
+document.querySelector("#buffer-completion-next").addEventListener("click", () => {
+  requestTopLevelView("calculator");
+  clearEditingState();
+  mixVolumeInput.focus(); mixVolumeInput.select();
+  showToast("Review the retained mix for your next tank. No remaining liquid is carried over automatically.");
+});
 startRunFromCalculatorButton.addEventListener("click", openRunStartDialog);
 openRunDialogButton.addEventListener("click", openRunStartDialog);
 clearButton.addEventListener("click", () => clearCalculation(true));
 cancelEditButton.addEventListener("click", () => {
   clearEditingState();
   rememberCalculation();
-  showToast("Record editing cancelled.");
+  showToast("Editing cancelled. Values remain as a new calculation; saving again creates a new tank.");
 });
 saveForm.addEventListener("submit", saveTankRecord);
 saveLibraryPaddock.addEventListener("change", () => {
+  document.querySelector("#edit-selected-paddock").disabled = !findLibraryEntryById(paddockLibrary, saveLibraryPaddock.value);
   setNewPaddockFields(saveLibraryPaddock, saveNewPaddockFields);
   const entry = libraryEntryFromSelection(saveLibraryPaddock);
   const historyPaddock = saveLibraryPaddock.value.startsWith(HISTORY_PADDOCK_PREFIX)
@@ -2826,6 +3039,13 @@ paddockList.addEventListener("click", (event) => {
   }
   if (action === "save-note") savePaddockNote(paddockId);
   if (action === "edit-tank") editTankRecord(paddockId, tankId);
+  if (action === "correct-buffer") openBufferCorrection(button.dataset.runId, tankId);
+  if (action === "edit-paddock-details") {
+    refreshPaddockLibrary();
+    const paddock = findPaddock(paddockId);
+    const entry = libraryEntryForPaddock(paddock);
+    openPaddockDetails(entry?.id);
+  }
   if (action === "delete-tank") deleteTankRecord(paddockId, tankId);
   if (action === "export-paddock") exportPaddock(paddockId);
   if (action === "share-paddock") sharePaddock(paddockId);
