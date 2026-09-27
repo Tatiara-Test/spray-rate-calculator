@@ -1,0 +1,1507 @@
+import { getStorage } from "./durable-storage.mjs";
+import { normalizeEquipmentSnapshot, methodsForEquipment } from "./spray-preferences.mjs";
+import { normalizeRunAllocationCorrections } from "./paddock-runs.mjs";
+import {
+  PADDOCK_LIBRARY_VERSION,
+  normalizeLibraryName,
+  normalizeSelectedPaddockSnapshot,
+  seedLibraryEntries,
+} from "./paddock-library.mjs";
+import {
+  SERVICING_STORE_VERSION,
+  appendFinalisedServicingRecord,
+  assertCompleteCombinedBackupAllowed as assertCompleteCombinedBackupAllowedForKeys,
+  assertServicingWritesEnabled as assertServicingWritesEnabledForKeys,
+  emptyServicingStore,
+  inspectServicingCompatibility as inspectServicingCompatibilityForKeys,
+  inspectServicingStore as inspectServicingStoreForKeys,
+  loadServicingStore as loadServicingStoreForKeys,
+  normalizeServicingStore,
+  persistServicingStore as persistServicingStoreForKeys,
+  servicingStorageKeys,
+  upsertServicingDraft,
+} from "./servicing/servicing-store.mjs";
+import {
+  propertySettingsKey,
+  PROPERTY_SETTINGS_VERSION,
+  inspectPropertySettings,
+  normalizePropertyIdentitySnapshot,
+  normalizePropertySettings,
+} from "./property-settings.mjs";
+
+export { PADDOCK_LIBRARY_VERSION };
+export {
+  SERVICING_STORE_VERSION,
+  appendFinalisedServicingRecord,
+  emptyServicingStore,
+  normalizeServicingStore,
+  upsertServicingDraft,
+};
+
+export const LEGACY_PADDOCKS_KEY = "pallathorpe-paddock-records-v1";
+export const LEGACY_WORK_NOTES_KEY = "pallathorpe-work-notes:v1";
+export const COMBINED_PREFIX = "tatiara-test:spray-rate-calculator:v1";
+export const SERVICING_STORAGE_KEYS = servicingStorageKeys(COMBINED_PREFIX);
+export const SERVICING_KEY = SERVICING_STORAGE_KEYS.records;
+export const SERVICING_COMPATIBILITY_KEY = SERVICING_STORAGE_KEYS.compatibility;
+export const PADDOCKS_KEY = `${COMBINED_PREFIX}:paddocks`;
+export const WORK_NOTES_KEY = `${COMBINED_PREFIX}:work-notes`;
+export const PROFILE_KEY = `${COMBINED_PREFIX}:profile`;
+export const PROPERTY_SETTINGS_KEY = propertySettingsKey(COMBINED_PREFIX);
+export { PROPERTY_SETTINGS_VERSION };
+export const WEATHER_SETTINGS_KEY = `${COMBINED_PREFIX}:weather-settings`;
+export const WEATHER_CACHE_KEY = `${COMBINED_PREFIX}:weather-cache`;
+export const PADDOCK_LIBRARY_KEY = `${COMBINED_PREFIX}:paddock-library`;
+export const MIGRATION_KEY = `${COMBINED_PREFIX}:migration`;
+export const LEGACY_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:paddocks`;
+export const LEGACY_WORK_NOTES_BACKUP_KEY = `${COMBINED_PREFIX}:legacy-backup:work-notes`;
+export const PRE_V3_PADDOCKS_BACKUP_KEY = `${COMBINED_PREFIX}:pre-v3-backup:paddocks`;
+export const PRE_RESTORE_RECOVERY_PREFIX = `${COMBINED_PREFIX}:recovery:pre-restore:`;
+
+export const PADDOCK_STORE_VERSION = 3;
+export const WORK_NOTES_VERSION = 1;
+export const PROFILE_VERSION = 1;
+export const WEATHER_SETTINGS_VERSION = 1;
+export const COMBINED_BACKUP_VERSION = 5;
+
+export function inspectServicingStore(storage = getStorage()) {
+  return inspectServicingStoreForKeys(storage, SERVICING_STORAGE_KEYS);
+}
+
+export function loadServicingStore(storage = getStorage()) {
+  return loadServicingStoreForKeys(storage, SERVICING_STORAGE_KEYS);
+}
+
+export function inspectServicingCompatibility(storage = getStorage()) {
+  return inspectServicingCompatibilityForKeys(storage, SERVICING_STORAGE_KEYS);
+}
+
+export function assertServicingWritesEnabled(storage = getStorage()) {
+  return assertServicingWritesEnabledForKeys(storage, SERVICING_STORAGE_KEYS);
+}
+
+export function assertCompleteCombinedBackupAllowed(storage, clientBackupVersion) {
+  return assertCompleteCombinedBackupAllowedForKeys(storage, clientBackupVersion, SERVICING_STORAGE_KEYS);
+}
+
+export function persistServicingStore(store, storage = getStorage(), options = {}) {
+  return persistServicingStoreForKeys(store, storage, { ...options, keys: SERVICING_STORAGE_KEYS });
+}
+
+export const MACHINES = Object.freeze(["412R", "Hayes boom", "4830", "4023"]);
+export const SPRAY_METHODS = Object.freeze(["Broadacre", "Camera"]);
+
+const text = (value) => (typeof value === "string" ? value : "");
+const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+const nullableText = (value) => {
+  const cleaned = text(value).trim().replace(/\s+/g, " ");
+  return cleaned || null;
+};
+const nullablePositive = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+const validatedNullablePositive = (value, context) => {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new TypeError(`${context} must be blank or greater than zero.`);
+  }
+  return number;
+};
+const nonNegativeFinite = (value, context, fallback = 0) => {
+  const number = finite(value, fallback);
+  if (number < 0) throw new TypeError(`${context} cannot be negative.`);
+  return number;
+};
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function deepFreezeJson(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const nested of Object.values(value)) deepFreezeJson(nested);
+  return Object.freeze(value);
+}
+
+export class UnsupportedDataVersionError extends RangeError {
+  constructor(dataset, version, supportedVersion) {
+    super(`${dataset} version ${version} is newer than supported version ${supportedVersion}.`);
+    this.name = "UnsupportedDataVersionError";
+    this.code = "UNSUPPORTED_FUTURE_VERSION";
+    this.dataset = dataset;
+    this.version = version;
+    this.supportedVersion = supportedVersion;
+  }
+}
+
+function assertSupportedVersion(input, supportedVersion, dataset) {
+  const version = input.version === undefined ? 1 : input.version;
+  if (!Number.isInteger(version) || version < 1) {
+    throw new TypeError(`${dataset} has an invalid version.`);
+  }
+  if (version > supportedVersion) {
+    throw new UnsupportedDataVersionError(dataset, version, supportedVersion);
+  }
+  return version;
+}
+
+export function normalizePaddockStore(input) {
+  if (!input || typeof input !== "object") {
+    throw new TypeError("Paddock records must contain a JSON object.");
+  }
+  const sourceVersion = assertSupportedVersion(input, PADDOCK_STORE_VERSION, "Paddock records");
+  if (!Array.isArray(input.paddocks)) {
+    throw new TypeError("Paddock records must contain a paddocks array.");
+  }
+  const paddocks = input.paddocks.map((paddock, paddockIndex) => {
+    if (!paddock || typeof paddock !== "object" || !Array.isArray(paddock.tanks)) {
+      throw new TypeError(`Paddock ${paddockIndex + 1} is not valid.`);
+    }
+    const name = nullableText(paddock.name);
+    if (!name) throw new TypeError(`Paddock ${paddockIndex + 1} has no name.`);
+    const tanks = paddock.tanks.map((tank, tankIndex) => {
+      if (!tank || typeof tank !== "object" || !Array.isArray(tank.products)) {
+        throw new TypeError(`Tank ${tankIndex + 1} in ${name} is not valid.`);
+      }
+      const equipmentSnapshot = Object.hasOwn(tank, "equipmentSnapshot") ? normalizeEquipmentSnapshot(tank.equipmentSnapshot) : undefined;
+      const machine = equipmentSnapshot ? tank.machine : MACHINES.includes(tank.machine) ? tank.machine : null;
+      const supportedMethods = methodsForEquipment(machine, equipmentSnapshot);
+      const sprayMethod = SPRAY_METHODS.includes(tank.sprayMethod) ? tank.sprayMethod : null;
+      if (sprayMethod && !supportedMethods.includes(sprayMethod)) {
+        throw new TypeError(`Tank ${tankIndex + 1} in ${name} has an incompatible ${sprayMethod.toLowerCase()}-spray machine.`);
+      }
+      const products = tank.products.map((product, productIndex) => {
+        if (!product || typeof product !== "object" || Array.isArray(product)) {
+          throw new TypeError(`Product ${productIndex + 1} in ${name} is not valid.`);
+        }
+        const productName = nullableText(product.name) || "";
+        const baseUnit = product.baseUnit === "g" ? "g" : "ml";
+        return {
+          ...cloneJson(product),
+          slot: Math.max(0, Math.trunc(finite(product.slot))),
+          name: productName,
+          normalizedName: productName
+            ? text(product.normalizedName) || productName.toLocaleLowerCase("en-AU")
+            : "",
+          rate: nonNegativeFinite(product.rate, `Product ${productIndex + 1} rate in ${name}`),
+          unit: text(product.unit),
+          amountBase: nonNegativeFinite(product.amountBase, `Product ${productIndex + 1} amount in ${name}`),
+          baseUnit,
+        };
+      });
+      const paddockSelection = Object.hasOwn(tank, "paddockSelection")
+        ? normalizeSelectedPaddockSnapshot(tank.paddockSelection)
+        : null;
+      const propertySnapshot = Object.hasOwn(tank, "propertySnapshot")
+        ? normalizePropertyIdentitySnapshot(tank.propertySnapshot)
+        : null;
+      return {
+        ...cloneJson(tank),
+        id: text(tank.id) || `migrated-tank-${paddockIndex + 1}-${tankIndex + 1}`,
+        tankNumber: Math.max(1, Math.trunc(finite(tank.tankNumber, tankIndex + 1))),
+        date: text(tank.date),
+        savedAt: text(tank.savedAt),
+        updatedAt: text(tank.updatedAt) || text(tank.savedAt),
+        tankTotal: nonNegativeFinite(tank.tankTotal, `Tank ${tankIndex + 1} total in ${name}`),
+        sprayRate: nonNegativeFinite(tank.sprayRate, `Tank ${tankIndex + 1} spray rate in ${name}`),
+        hectares: nonNegativeFinite(tank.hectares, `Tank ${tankIndex + 1} hectares in ${name}`),
+        operator: nullableText(tank.operator),
+        machine,
+        sprayMethod,
+        recordType: "tank",
+        products,
+        ...(Object.hasOwn(tank, "paddockSelection") ? { paddockSelection } : {}),
+        ...(Object.hasOwn(tank, "propertySnapshot") ? { propertySnapshot } : {}),
+        ...(equipmentSnapshot ? { equipmentSnapshot } : {}),
+      };
+    });
+    return {
+      ...cloneJson(paddock),
+      id: text(paddock.id) || `migrated-paddock-${paddockIndex + 1}`,
+      name,
+      normalizedName: text(paddock.normalizedName) || name.toLocaleLowerCase("en-AU"),
+      sizeHectares: nullablePositive(paddock.sizeHectares),
+      archivedAt: nullableText(paddock.archivedAt),
+      completedAt: nullableText(paddock.completedAt),
+      note: text(paddock.note),
+      createdAt: text(paddock.createdAt),
+      updatedAt: text(paddock.updatedAt),
+      contentRevision: Math.max(1, Math.trunc(finite(paddock.contentRevision, 1))),
+      lastGeneratedRevision: Number.isInteger(paddock.lastGeneratedRevision)
+        ? paddock.lastGeneratedRevision
+        : null,
+      lastGeneratedAt: text(paddock.lastGeneratedAt) || null,
+      lastGeneratedLabel: ["Original", "Amended"].includes(paddock.lastGeneratedLabel)
+        ? paddock.lastGeneratedLabel
+        : null,
+      tanks,
+    };
+  });
+
+  if (sourceVersion >= 3 && !Array.isArray(input.runs)) {
+    throw new TypeError("Paddock records version 3 must contain a runs array.");
+  }
+  if (sourceVersion >= 3 && !Object.hasOwn(input, "activeRunId")) {
+    throw new TypeError("Paddock records version 3 must contain an active run reference.");
+  }
+  const runs = (Array.isArray(input.runs) ? input.runs : []).map((run, runIndex) => {
+    if (!run || typeof run !== "object" || Array.isArray(run) || !Array.isArray(run.products) || !Array.isArray(run.allocations)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} is not valid.`);
+    }
+    const id = text(run.id);
+    if (!id) throw new TypeError(`Paddock run ${runIndex + 1} has no identifier.`);
+    if (!["active", "completed", "cancelled"].includes(run.status)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} has an invalid status.`);
+    }
+    const equipmentSnapshot = Object.hasOwn(run, "equipmentSnapshot") ? normalizeEquipmentSnapshot(run.equipmentSnapshot) : undefined;
+    const machine = equipmentSnapshot ? run.machine : MACHINES.includes(run.machine) ? run.machine : null;
+    const supportedMethods = methodsForEquipment(machine, equipmentSnapshot);
+    const sprayMethod = SPRAY_METHODS.includes(run.sprayMethod) ? run.sprayMethod : null;
+    if (!sprayMethod) throw new TypeError(`Paddock run ${runIndex + 1} has no application method.`);
+    if (sprayMethod && !supportedMethods.includes(sprayMethod)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} has an incompatible ${sprayMethod.toLowerCase()}-spray machine.`);
+    }
+    const controllerStartLitres = finite(run.controllerStartLitres, -1);
+    if (controllerStartLitres <= 0) throw new TypeError(`Paddock run ${runIndex + 1} has an invalid controller start.`);
+    const sprayRate = finite(run.sprayRate, -1);
+    if (sprayRate < 0 || (sprayMethod === "Broadacre" && sprayRate <= 0)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} has an invalid spray rate.`);
+    }
+    const products = run.products.map((product, productIndex) => {
+      if (!product || typeof product !== "object" || Array.isArray(product)) {
+        throw new TypeError(`Product ${productIndex + 1} in run ${runIndex + 1} is not valid.`);
+      }
+      const productName = nullableText(product.name) || "";
+      return {
+        ...cloneJson(product),
+        slot: Math.max(0, Math.trunc(finite(product.slot))),
+        name: productName,
+        normalizedName: productName
+          ? text(product.normalizedName) || productName.toLocaleLowerCase("en-AU")
+          : "",
+        rate: nonNegativeFinite(product.rate, `Product ${productIndex + 1} rate in run ${runIndex + 1}`),
+        unit: text(product.unit),
+        amountBase: nonNegativeFinite(product.amountBase, `Product ${productIndex + 1} amount in run ${runIndex + 1}`),
+        baseUnit: product.baseUnit === "g" ? "g" : "ml",
+      };
+    });
+    let selectedPaddocks;
+    if (Object.hasOwn(run, "selectedPaddocks")) {
+      if (!Array.isArray(run.selectedPaddocks)) {
+        throw new TypeError(`Paddock run ${runIndex + 1} has an invalid selected paddocks list.`);
+      }
+      selectedPaddocks = run.selectedPaddocks.map(normalizeSelectedPaddockSnapshot);
+      const selectedIds = selectedPaddocks.map((selection) => selection.libraryEntryId);
+      if (new Set(selectedIds).size !== selectedIds.length) {
+        throw new TypeError(`Paddock run ${runIndex + 1} has duplicated selected paddocks.`);
+      }
+      const selectedNames = selectedPaddocks.map((selection) => selection.normalizedName);
+      if (new Set(selectedNames).size !== selectedNames.length) {
+        throw new TypeError(`Paddock run ${runIndex + 1} has duplicated selected paddock names.`);
+      }
+    }
+    let controllerBefore = controllerStartLitres;
+    const allocationIds = new Set();
+    const allocations = run.allocations.map((allocation, allocationIndex) => {
+      if (!allocation || typeof allocation !== "object" || Array.isArray(allocation)) {
+        throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} is not valid.`);
+      }
+      const allocationId = text(allocation.id);
+      const paddockId = text(allocation.paddockId);
+      const paddockName = nullableText(allocation.paddockName);
+      const controllerAfterLitres = finite(allocation.controllerAfterLitres, -1);
+      if (!allocationId || allocationIds.has(allocationId) || !paddockId || !paddockName) {
+        throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} is incomplete.`);
+      }
+      if (controllerAfterLitres < 0 || controllerAfterLitres >= controllerBefore) {
+        throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} has an invalid controller reading.`);
+      }
+      if (
+        selectedPaddocks
+        && !selectedPaddocks.some(
+          (selection) => selection.normalizedName === normalizeLibraryName(paddockName),
+        )
+      ) {
+        throw new TypeError(`Allocation ${allocationIndex + 1} in run ${runIndex + 1} is not selected for this buffer.`);
+      }
+      allocationIds.add(allocationId);
+      controllerBefore = controllerAfterLitres;
+      return {
+        ...cloneJson(allocation),
+        id: allocationId,
+        paddockId,
+        paddockName,
+        paddockSizeHectares: nullablePositive(allocation.paddockSizeHectares),
+        controllerAfterLitres,
+        savedAt: text(allocation.savedAt),
+        updatedAt: text(allocation.updatedAt) || text(allocation.savedAt),
+      };
+    });
+    const finalReading = run.controllerFinalLitres === null || run.controllerFinalLitres === undefined
+      ? null
+      : finite(run.controllerFinalLitres, -1);
+    if (finalReading !== null && (finalReading < 0 || finalReading > controllerStartLitres)) {
+      throw new TypeError(`Paddock run ${runIndex + 1} has an invalid final controller reading.`);
+    }
+    if (run.status === "active" && finalReading !== null) {
+      throw new TypeError(`Active paddock run ${runIndex + 1} cannot have a final controller reading.`);
+    }
+    if (run.status === "completed" && (!allocations.length || finalReading !== controllerBefore)) {
+      throw new TypeError(`Completed paddock run ${runIndex + 1} has an inconsistent final boundary.`);
+    }
+    if (run.status === "cancelled" && (allocations.length || finalReading !== controllerStartLitres)) {
+      throw new TypeError(`Cancelled paddock run ${runIndex + 1} has an inconsistent audit record.`);
+    }
+    const propertySnapshot = Object.hasOwn(run, "propertySnapshot")
+      ? normalizePropertyIdentitySnapshot(run.propertySnapshot)
+      : null;
+    const allocationCorrections = Object.hasOwn(run, "allocationCorrections")
+      ? normalizeRunAllocationCorrections({ ...run, allocations, controllerStartLitres })
+      : undefined;
+    return {
+      ...cloneJson(run),
+      id,
+      runNumber: Math.max(1, Math.trunc(finite(run.runNumber, runIndex + 1))),
+      status: run.status,
+      date: text(run.date),
+      savedAt: text(run.savedAt),
+      updatedAt: text(run.updatedAt) || text(run.savedAt),
+      completedAt: nullableText(run.completedAt),
+      cancelledAt: nullableText(run.cancelledAt),
+      operator: nullableText(run.operator),
+      machine,
+      sprayMethod,
+      controllerStartLitres,
+      controllerFinalLitres: finalReading,
+      sprayRate,
+      products,
+      allocations,
+      ...(allocationCorrections !== undefined ? { allocationCorrections } : {}),
+      ...(selectedPaddocks ? { selectedPaddocks } : {}),
+      ...(Object.hasOwn(run, "propertySnapshot") ? { propertySnapshot } : {}),
+      ...(equipmentSnapshot ? { equipmentSnapshot } : {}),
+    };
+  });
+  const activeRunId = nullableText(input.activeRunId);
+  const activeRuns = runs.filter((run) => run.status === "active");
+  if (activeRuns.length > 1 || (activeRuns.length === 1 && activeRunId !== activeRuns[0].id) || (activeRuns.length === 0 && activeRunId !== null)) {
+    throw new TypeError("Paddock records have an inconsistent active run reference.");
+  }
+  const paddockIds = new Set();
+  const paddocksById = new Map();
+  const recordIds = new Set();
+  for (const paddock of paddocks) {
+    if (paddockIds.has(paddock.id)) throw new TypeError(`Paddock id ${paddock.id} is duplicated.`);
+    paddockIds.add(paddock.id);
+    paddocksById.set(paddock.id, paddock);
+    for (const tank of paddock.tanks) {
+      if (recordIds.has(tank.id)) throw new TypeError(`Record id ${tank.id} is duplicated.`);
+      recordIds.add(tank.id);
+    }
+  }
+  const runIds = new Set();
+  for (const run of runs) {
+    if (runIds.has(run.id)) throw new TypeError(`Paddock run id ${run.id} is duplicated.`);
+    runIds.add(run.id);
+    for (const allocation of run.allocations) {
+      if (!paddockIds.has(allocation.paddockId)) {
+        throw new TypeError(`Run allocation ${allocation.id} refers to a paddock that is not stored.`);
+      }
+      if (run.status === "active" && paddocksById.get(allocation.paddockId)?.archivedAt) {
+        throw new TypeError(`Active run allocation ${allocation.id} refers to an archived paddock.`);
+      }
+      if (recordIds.has(allocation.id)) throw new TypeError(`Record id ${allocation.id} is duplicated.`);
+      recordIds.add(allocation.id);
+    }
+  }
+  const lastPaddockId = text(input.lastPaddockId) || null;
+  if (lastPaddockId !== null && !paddockIds.has(lastPaddockId)) {
+    throw new TypeError("Paddock records have an invalid last paddock reference.");
+  }
+  return {
+    version: PADDOCK_STORE_VERSION,
+    paddocks,
+    lastPaddockId,
+    runs,
+    activeRunId,
+  };
+}
+
+function assertPresentFieldsUnchanged(source, normalized, fields, context) {
+  for (const field of fields) {
+    if (!Object.hasOwn(source, field)) continue;
+    if (JSON.stringify(source[field]) !== JSON.stringify(normalized[field])) {
+      throw new TypeError(`${context} has an invalid ${field} value that cannot be safely normalized.`);
+    }
+  }
+}
+
+function assertRequiredStoredFields(source, fields, context) {
+  const missing = fields.filter((field) => !Object.hasOwn(source, field));
+  if (missing.length) {
+    throw new TypeError(`${context} is missing required stored fields: ${missing.join(", ")}.`);
+  }
+}
+
+export function normalizePaddockLibraryData(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("Paddock Library must contain a JSON object.");
+  }
+  assertSupportedVersion(input, PADDOCK_LIBRARY_VERSION, "Paddock Library");
+  if (!Array.isArray(input.entries)) {
+    throw new TypeError("Paddock Library must contain an entries array.");
+  }
+  const ids = new Set();
+  const names = new Set();
+  const sourcePaddockIds = new Set();
+  const entries = input.entries.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new TypeError(`Paddock Library entry ${index + 1} is not valid.`);
+    }
+    const id = nullableText(entry.id);
+    const name = nullableText(entry.name);
+    if (!id || !name) {
+      throw new TypeError(`Paddock Library entry ${index + 1} is missing its id or name.`);
+    }
+    const normalizedName = normalizeLibraryName(name);
+    if (ids.has(id)) throw new TypeError(`Paddock Library id ${id} is duplicated.`);
+    if (names.has(normalizedName)) throw new TypeError(`Paddock Library name ${name} is duplicated.`);
+    ids.add(id);
+    names.add(normalizedName);
+    const createdAt = nullableText(entry.createdAt);
+    const updatedAt = nullableText(entry.updatedAt);
+    const sourcePaddockId = nullableText(entry.sourcePaddockId);
+    if (!createdAt || !updatedAt) {
+      throw new TypeError(`Paddock Library entry ${index + 1} is missing its timestamps.`);
+    }
+    if (sourcePaddockId && sourcePaddockIds.has(sourcePaddockId)) {
+      throw new TypeError(`Paddock Library source paddock ${sourcePaddockId} is duplicated.`);
+    }
+    if (sourcePaddockId) sourcePaddockIds.add(sourcePaddockId);
+    return {
+      ...cloneJson(entry),
+      id,
+      name,
+      normalizedName,
+      totalHectares: validatedNullablePositive(entry.totalHectares, `Paddock Library entry ${index + 1} total hectares`),
+      archivedAt: nullableText(entry.archivedAt),
+      createdAt,
+      updatedAt,
+      ...(Object.hasOwn(entry, "sourcePaddockId") ? { sourcePaddockId } : {}),
+    };
+  });
+  return { version: PADDOCK_LIBRARY_VERSION, entries };
+}
+
+function normalizeStoredPaddockLibrary(input) {
+  const normalized = normalizePaddockLibraryData(input);
+  assertRequiredStoredFields(input, ["version", "entries"], "Paddock Library");
+  input.entries.forEach((entry, index) => {
+    assertRequiredStoredFields(
+      entry,
+      ["id", "name", "normalizedName", "totalHectares", "archivedAt", "createdAt", "updatedAt"],
+      `Paddock Library entry ${index + 1}`,
+    );
+    assertPresentFieldsUnchanged(
+      entry,
+      normalized.entries[index],
+      ["id", "name", "normalizedName", "totalHectares", "archivedAt", "createdAt", "updatedAt", "sourcePaddockId"],
+      `Paddock Library entry ${index + 1}`,
+    );
+  });
+  return normalized;
+}
+
+function normalizeStoredPaddockStore(input) {
+  const normalized = normalizePaddockStore(input);
+  const sourceVersion = input.version === undefined ? 1 : input.version;
+  assertPresentFieldsUnchanged(input, normalized, ["lastPaddockId", "activeRunId", "runs"], "Paddock records");
+  if (sourceVersion >= 3) {
+    assertRequiredStoredFields(input, ["runs", "activeRunId"], "Paddock records");
+  }
+  input.paddocks.forEach((paddock, paddockIndex) => {
+    const normalizedPaddock = normalized.paddocks[paddockIndex];
+    const paddockName = normalizedPaddock.name || `Paddock ${paddockIndex + 1}`;
+    assertPresentFieldsUnchanged(
+      paddock,
+      normalizedPaddock,
+      [
+        "id", "name", "normalizedName", "note", "createdAt", "updatedAt",
+        "sizeHectares", "archivedAt", "completedAt", "contentRevision", "lastGeneratedRevision", "lastGeneratedAt", "lastGeneratedLabel",
+      ],
+      paddockName,
+    );
+    if (sourceVersion >= 3) assertRequiredStoredFields(paddock, ["sizeHectares"], paddockName);
+    paddock.tanks.forEach((tank, tankIndex) => {
+      const normalizedTank = normalizedPaddock.tanks[tankIndex];
+      assertRequiredStoredFields(
+        tank,
+        ["id", "tankNumber", "date", "tankTotal", "sprayRate", "hectares", "products"],
+        `Tank ${tankIndex + 1} in ${paddockName}`,
+      );
+      assertPresentFieldsUnchanged(
+        tank,
+        normalizedTank,
+        [
+          "id", "tankNumber", "date", "savedAt", "updatedAt", "tankTotal",
+          "sprayRate", "hectares", "operator", "machine", "sprayMethod", "recordType", "paddockSelection",
+        ],
+        `Tank ${tankIndex + 1} in ${paddockName}`,
+      );
+      if (sourceVersion >= 3) {
+        assertRequiredStoredFields(tank, ["sprayMethod", "recordType"], `Tank ${tankIndex + 1} in ${paddockName}`);
+      }
+      tank.products.forEach((product, productIndex) => {
+        if (!product || typeof product !== "object" || Array.isArray(product)) {
+          throw new TypeError(`Product ${productIndex + 1} in ${paddockName} is not a stored record object.`);
+        }
+        assertRequiredStoredFields(
+          product,
+          ["slot", "rate", "unit", "amountBase", "baseUnit"],
+          `Product ${productIndex + 1} in ${paddockName}`,
+        );
+        assertPresentFieldsUnchanged(
+          product,
+          normalizedTank.products[productIndex],
+          ["slot", "name", "normalizedName", "rate", "unit", "amountBase", "baseUnit"],
+          `Product ${productIndex + 1} in ${paddockName}`,
+        );
+      });
+    });
+  });
+  return normalized;
+}
+
+export function normalizeWorkNotesData(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("Work Notes backup must contain a JSON object.");
+  }
+  assertSupportedVersion(input, WORK_NOTES_VERSION, "Work Notes");
+  if (!input.notes || typeof input.notes !== "object" || Array.isArray(input.notes)) {
+    throw new TypeError("Work Notes backup is missing notes.");
+  }
+  if (!input.copied || typeof input.copied !== "object" || Array.isArray(input.copied)) {
+    throw new TypeError("Work Notes backup is missing copied state.");
+  }
+  if (!Array.isArray(input.followUps)) {
+    throw new TypeError("Work Notes backup is missing to-do items.");
+  }
+  return { ...cloneJson(input), version: WORK_NOTES_VERSION };
+}
+
+function readJson(storage, key) {
+  const raw = storage.getItem(key);
+  if (raw === null) return null;
+  return JSON.parse(raw);
+}
+
+function writeVerified(storage, key, value) {
+  const raw = JSON.stringify(value);
+  storage.setItem(key, raw);
+  const verified = storage.getItem(key);
+  if (verified !== raw) throw new Error(`Could not verify ${key}.`);
+}
+
+function safeRawBackup(storage, key, sourceKey, raw, now) {
+  if (raw === null || storage.getItem(key) !== null) return false;
+  try {
+    writeVerified(storage, key, { sourceKey, capturedAt: now, raw });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writeMigrationMarker(storage, markerName, details) {
+  let marker = {};
+  try {
+    marker = readJson(storage, MIGRATION_KEY) || {};
+  } catch {
+    marker = {};
+  }
+  writeVerified(storage, MIGRATION_KEY, {
+    ...marker,
+    version: 1,
+    [markerName]: details,
+  });
+}
+
+export function migrateDataset({
+  storage,
+  targetKey,
+  sourceKey,
+  backupKey,
+  normalize,
+  normalizeExisting = normalize,
+  markerName,
+  now = new Date().toISOString(),
+}) {
+  const existingRaw = storage.getItem(targetKey);
+  if (existingRaw !== null) {
+    const existing = normalizeExisting(JSON.parse(existingRaw));
+    const sourceRaw = storage.getItem(sourceKey);
+    if (sourceRaw) safeRawBackup(storage, backupKey, sourceKey, sourceRaw, now);
+    let marker;
+    try {
+      marker = readJson(storage, MIGRATION_KEY);
+    } catch {
+      marker = null;
+    }
+    if (!marker?.[markerName]) {
+      writeMigrationMarker(storage, markerName, {
+        status: "existing",
+        sourceKey: sourceRaw ? sourceKey : null,
+        confirmedAt: now,
+      });
+    }
+    return { status: "existing", value: existing, sourceUntouched: sourceRaw };
+  }
+
+  const sourceRaw = storage.getItem(sourceKey);
+  if (sourceRaw === null) {
+    let marker;
+    try {
+      marker = readJson(storage, MIGRATION_KEY);
+    } catch {
+      marker = null;
+    }
+    if (!marker?.[markerName]) {
+      writeMigrationMarker(storage, markerName, { status: "absent", sourceKey, checkedAt: now });
+    }
+    return { status: "absent", value: null, sourceUntouched: null };
+  }
+  safeRawBackup(storage, backupKey, sourceKey, sourceRaw, now);
+
+  let normalized;
+  try {
+    normalized = normalize(JSON.parse(sourceRaw));
+  } catch (error) {
+    return { status: "invalid", value: null, error, sourceUntouched: storage.getItem(sourceKey) };
+  }
+
+  writeVerified(storage, targetKey, normalized);
+  if (storage.getItem(sourceKey) !== sourceRaw) {
+    throw new Error(`${sourceKey} changed during migration.`);
+  }
+
+  writeMigrationMarker(storage, markerName, {
+    status: "imported",
+    sourceKey,
+    importedAt: now,
+  });
+  return { status: "imported", value: normalized, sourceUntouched: storage.getItem(sourceKey) };
+}
+
+export function migrateLegacyData(storage = getStorage(), now) {
+  const independently = (options) => {
+    try {
+      return migrateDataset(options);
+    } catch (error) {
+      let sourceUntouched = null;
+      try {
+        sourceUntouched = storage.getItem(options.sourceKey);
+      } catch {
+        // Storage itself is unavailable; report the dataset error without masking it.
+      }
+      return {
+        status: "error",
+        value: null,
+        error,
+        sourceUntouched,
+      };
+    }
+  };
+  const paddocks = independently({
+    storage,
+    targetKey: PADDOCKS_KEY,
+    sourceKey: LEGACY_PADDOCKS_KEY,
+    backupKey: LEGACY_PADDOCKS_BACKUP_KEY,
+    normalize: normalizePaddockStore,
+    normalizeExisting: normalizeStoredPaddockStore,
+    markerName: "paddocks",
+    now,
+  });
+  const workNotes = independently({
+    storage,
+    targetKey: WORK_NOTES_KEY,
+    sourceKey: LEGACY_WORK_NOTES_KEY,
+    backupKey: LEGACY_WORK_NOTES_BACKUP_KEY,
+    normalize: normalizeWorkNotesData,
+    markerName: "workNotes",
+    now,
+  });
+  return { paddocks, workNotes };
+}
+
+export function inspectPaddockStore(storage = getStorage()) {
+  let raw;
+  try {
+    raw = storage.getItem(PADDOCKS_KEY);
+  } catch (error) {
+    return { status: "corrupt", raw: null, value: null, error };
+  }
+  if (raw === null) return { status: "absent", raw: null, value: null };
+
+  try {
+    return { status: "ready", raw, value: normalizeStoredPaddockStore(JSON.parse(raw)) };
+  } catch (error) {
+    if (error?.code === "UNSUPPORTED_FUTURE_VERSION") {
+      return {
+        status: "future",
+        raw,
+        value: null,
+        version: error.version,
+        supportedVersion: error.supportedVersion,
+        error,
+      };
+    }
+    return { status: "corrupt", raw, value: null, error };
+  }
+}
+
+export function loadPaddockStore(storage = getStorage()) {
+  try {
+    const parsed = readJson(storage, PADDOCKS_KEY);
+    return parsed ? normalizePaddockStore(parsed) : {
+      version: PADDOCK_STORE_VERSION,
+      paddocks: [],
+      lastPaddockId: null,
+      runs: [],
+      activeRunId: null,
+    };
+  } catch {
+    return {
+      version: PADDOCK_STORE_VERSION,
+      paddocks: [],
+      lastPaddockId: null,
+      runs: [],
+      activeRunId: null,
+    };
+  }
+}
+
+function preservePreV3PaddockStore(storage, now = new Date().toISOString()) {
+  const sourceRaw = storage.getItem(PADDOCKS_KEY);
+  if (sourceRaw === null) return;
+  const source = JSON.parse(sourceRaw);
+  const sourceVersion = source?.version === undefined ? 1 : source.version;
+  if (!Number.isInteger(sourceVersion) || sourceVersion >= PADDOCK_STORE_VERSION) return;
+  const backupValue = {
+    sourceKey: PADDOCKS_KEY,
+    sourceVersion,
+    capturedAt: now,
+    raw: sourceRaw,
+  };
+  const verifyBackup = (raw, key) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error(`The paddock safety backup at ${key} is unreadable; the upgrade was not written.`);
+    }
+    if (
+      parsed?.sourceKey !== PADDOCKS_KEY
+      || !Number.isInteger(parsed?.sourceVersion)
+      || parsed.sourceVersion < 1
+      || parsed.sourceVersion >= PADDOCK_STORE_VERSION
+      || typeof parsed?.raw !== "string"
+    ) {
+      throw new Error(`The paddock safety backup at ${key} is invalid; the upgrade was not written.`);
+    }
+    return parsed;
+  };
+  const existingBackup = storage.getItem(PRE_V3_PADDOCKS_BACKUP_KEY);
+  if (existingBackup !== null) {
+    const parsed = verifyBackup(existingBackup, PRE_V3_PADDOCKS_BACKUP_KEY);
+    if (parsed.sourceVersion !== sourceVersion || parsed.raw !== sourceRaw) {
+      let hash = 2166136261;
+      for (let index = 0; index < sourceRaw.length; index += 1) {
+        hash ^= sourceRaw.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      const currentBackupKey = `${PRE_V3_PADDOCKS_BACKUP_KEY}:v${sourceVersion}-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+      const currentBackup = storage.getItem(currentBackupKey);
+      if (currentBackup === null) writeVerified(storage, currentBackupKey, backupValue);
+      else {
+        const verifiedCurrent = verifyBackup(currentBackup, currentBackupKey);
+        if (verifiedCurrent.sourceVersion !== sourceVersion || verifiedCurrent.raw !== sourceRaw) {
+          throw new Error("A paddock safety-backup identifier collision prevented the upgrade write.");
+        }
+      }
+    }
+  } else writeVerified(storage, PRE_V3_PADDOCKS_BACKUP_KEY, backupValue);
+  if (storage.getItem(PADDOCKS_KEY) !== sourceRaw) {
+    throw new Error("Paddock records changed while preparing the version-3 safety backup.");
+  }
+}
+
+export function persistPaddockStore(store, storage = getStorage()) {
+  preservePreV3PaddockStore(storage);
+  writeVerified(storage, PADDOCKS_KEY, normalizePaddockStore(store));
+}
+
+export function normalizeProfileData(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("Operator profile must contain a JSON object.");
+  }
+  assertSupportedVersion(input, PROFILE_VERSION, "Operator profile");
+  if (input.operator !== undefined && input.operator !== null && typeof input.operator !== "string") {
+    throw new TypeError("Operator profile has an invalid operator name.");
+  }
+  if (input.operatorPrompted !== undefined && typeof input.operatorPrompted !== "boolean") {
+    throw new TypeError("Operator profile has an invalid prompt state.");
+  }
+  if (
+    input.lastMachine !== undefined
+    && input.lastMachine !== null
+    && (typeof input.lastMachine !== "string" || !nullableText(input.lastMachine))
+  ) {
+    throw new TypeError("Operator profile has an unknown machine.");
+  }
+  return {
+    version: PROFILE_VERSION,
+    operator: nullableText(input.operator),
+    operatorPrompted: input.operatorPrompted === true,
+    lastMachine: nullableText(input.lastMachine) || MACHINES[0],
+  };
+}
+
+function validateWeatherLink(link, index) {
+  if (!link || typeof link !== "object" || Array.isArray(link)) {
+    throw new TypeError(`Weather shortcut ${index + 1} is not valid.`);
+  }
+  if (typeof link.label !== "string" || !nullableText(link.label)) {
+    throw new TypeError(`Weather shortcut ${index + 1} has no label.`);
+  }
+  if (typeof link.url !== "string") {
+    throw new TypeError(`Weather shortcut ${index + 1} has no address.`);
+  }
+  let parsed;
+  try {
+    parsed = new URL(link.url);
+  } catch {
+    throw new TypeError(`Weather shortcut ${index + 1} has an invalid address.`);
+  }
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new TypeError(`Weather shortcut ${index + 1} has an invalid address.`);
+  }
+  if (link.id !== undefined && (typeof link.id !== "string" || !link.id.trim())) {
+    throw new TypeError(`Weather shortcut ${index + 1} has an invalid identifier.`);
+  }
+  if (link.builtIn !== undefined && typeof link.builtIn !== "boolean") {
+    throw new TypeError(`Weather shortcut ${index + 1} has an invalid built-in state.`);
+  }
+}
+
+export function normalizeWeatherSettingsData(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("Weather settings must contain a JSON object.");
+  }
+  assertSupportedVersion(input, WEATHER_SETTINGS_VERSION, "Weather settings");
+  if (input.location !== null && input.location !== undefined) {
+    if (
+      typeof input.location !== "object"
+      || Array.isArray(input.location)
+      || typeof input.location.label !== "string"
+      || !nullableText(input.location.label)
+      || !Number.isFinite(input.location.latitude)
+      || !Number.isFinite(input.location.longitude)
+      || input.location.latitude < -90
+      || input.location.latitude > 90
+      || input.location.longitude < -180
+      || input.location.longitude > 180
+    ) {
+      throw new TypeError("Weather settings contain an invalid location.");
+    }
+  }
+  if (input.links !== undefined && !Array.isArray(input.links)) {
+    throw new TypeError("Weather settings must contain a shortcuts array.");
+  }
+  const links = input.links === undefined ? [] : input.links;
+  links.forEach(validateWeatherLink);
+  const ids = links
+    .filter((link) => typeof link.id === "string")
+    .map((link) => link.id.trim());
+  if (new Set(ids).size !== ids.length) {
+    throw new TypeError("Weather settings contain duplicate shortcut identifiers.");
+  }
+  return {
+    version: WEATHER_SETTINGS_VERSION,
+    location: input.location ? cloneJson(input.location) : null,
+    links: cloneJson(links),
+  };
+}
+
+function inspectVersionedStore(storage, key, normalize) {
+  let raw;
+  try {
+    raw = storage.getItem(key);
+  } catch (error) {
+    return { status: "corrupt", raw: null, value: null, error };
+  }
+  if (raw === null) return { status: "absent", raw: null, value: null };
+  try {
+    const value = normalize(JSON.parse(raw));
+    return { status: "ready", raw, value, version: value.version };
+  } catch (error) {
+    if (error?.code === "UNSUPPORTED_FUTURE_VERSION") {
+      return {
+        status: "future",
+        raw,
+        value: null,
+        version: error.version,
+        supportedVersion: error.supportedVersion,
+        error,
+      };
+    }
+    return { status: "corrupt", raw, value: null, error };
+  }
+}
+
+export function inspectPaddockLibraryStore(storage = getStorage()) {
+  return inspectVersionedStore(storage, PADDOCK_LIBRARY_KEY, normalizeStoredPaddockLibrary);
+}
+
+export function loadPaddockLibrary(storage = getStorage()) {
+  const inspection = inspectPaddockLibraryStore(storage);
+  if (inspection.status === "absent") {
+    return { version: PADDOCK_LIBRARY_VERSION, entries: [] };
+  }
+  if (inspection.status === "ready") return inspection.value;
+  throw inspection.error;
+}
+
+export function persistPaddockLibrary(library, storage = getStorage()) {
+  const existing = inspectPaddockLibraryStore(storage);
+  if (existing.status === "corrupt" || existing.status === "future") {
+    const error = new Error("Existing Paddock Library data is protected and cannot be overwritten.");
+    error.code = "PROTECTED_EXISTING_DATA";
+    error.inspection = existing;
+    throw error;
+  }
+  writeVerified(storage, PADDOCK_LIBRARY_KEY, normalizePaddockLibraryData(library));
+}
+
+export function ensurePaddockLibrarySeeded(
+  paddockStore,
+  storage = getStorage(),
+  now = new Date(),
+  idFactory,
+) {
+  const existing = inspectPaddockLibraryStore(storage);
+  if (existing.status === "ready") {
+    return { status: "existing", value: existing.value, seededCount: 0 };
+  }
+  if (existing.status === "corrupt" || existing.status === "future") {
+    return { status: existing.status, value: null, seededCount: 0, inspection: existing };
+  }
+
+  const normalizedPaddocks = normalizePaddockStore(paddockStore);
+  const entries = seedLibraryEntries(normalizedPaddocks, now, idFactory);
+  if (!entries.length) {
+    return {
+      status: "absent",
+      value: { version: PADDOCK_LIBRARY_VERSION, entries: [] },
+      seededCount: 0,
+    };
+  }
+
+  const beforeWrite = inspectPaddockLibraryStore(storage);
+  if (beforeWrite.status === "ready") {
+    return { status: "existing", value: beforeWrite.value, seededCount: 0 };
+  }
+  if (beforeWrite.status === "corrupt" || beforeWrite.status === "future") {
+    return { status: beforeWrite.status, value: null, seededCount: 0, inspection: beforeWrite };
+  }
+
+  const value = normalizePaddockLibraryData({
+    version: PADDOCK_LIBRARY_VERSION,
+    entries,
+  });
+  persistPaddockLibrary(value, storage);
+  return { status: "seeded", value, seededCount: value.entries.length };
+}
+
+export function inspectProfileStore(storage = getStorage()) {
+  return inspectVersionedStore(storage, PROFILE_KEY, normalizeProfileData);
+}
+
+export function loadProfile(storage = getStorage()) {
+  const inspection = inspectProfileStore(storage);
+  if (inspection.status === "absent") return normalizeProfileData({});
+  if (inspection.status === "ready") return inspection.value;
+  throw inspection.error;
+}
+
+export function persistProfile(profile, storage = getStorage()) {
+  const existing = inspectProfileStore(storage);
+  if (existing.status === "corrupt" || existing.status === "future") {
+    const error = new Error("Existing operator profile is protected and cannot be overwritten.");
+    error.code = "PROTECTED_EXISTING_DATA";
+    error.inspection = existing;
+    throw error;
+  }
+  writeVerified(storage, PROFILE_KEY, normalizeProfileData(profile));
+}
+
+export function inspectWeatherSettingsStore(storage = getStorage()) {
+  return inspectVersionedStore(storage, WEATHER_SETTINGS_KEY, normalizeWeatherSettingsData);
+}
+
+export function loadWeatherSettings(storage = getStorage()) {
+  const inspection = inspectWeatherSettingsStore(storage);
+  if (inspection.status === "absent") return normalizeWeatherSettingsData({});
+  if (inspection.status === "ready") return inspection.value;
+  throw inspection.error;
+}
+
+export function persistWeatherSettings(settings, storage = getStorage()) {
+  const existing = inspectWeatherSettingsStore(storage);
+  if (existing.status === "corrupt" || existing.status === "future") {
+    const error = new Error("Existing weather settings are protected and cannot be overwritten.");
+    error.code = "PROTECTED_EXISTING_DATA";
+    error.inspection = existing;
+    throw error;
+  }
+  writeVerified(storage, WEATHER_SETTINGS_KEY, normalizeWeatherSettingsData(settings));
+}
+
+function datasetVersion(value, fallback) {
+  return Number.isInteger(value?.version) && value.version > 0 ? value.version : fallback;
+}
+
+function normalizedBackupMetadata(options, datasets) {
+  const configuredOrigin = nullableText(options?.origin);
+  const browserOrigin = nullableText(globalThis.location?.origin);
+  const selectedOrigin = configuredOrigin || browserOrigin;
+  return {
+    channel: nullableText(options?.channel) || "combined-app",
+    origin: selectedOrigin === "null" ? null : selectedOrigin,
+    datasetVersions: {
+      paddocks: datasetVersion(datasets.paddocks, PADDOCK_STORE_VERSION),
+      paddockLibrary: datasetVersion(datasets.paddockLibrary, PADDOCK_LIBRARY_VERSION),
+      workNotes: datasetVersion(datasets.workNotes, WORK_NOTES_VERSION),
+      profile: PROFILE_VERSION,
+      ...(datasets.propertySettings ? { propertySettings: PROPERTY_SETTINGS_VERSION } : {}),
+      weatherSettings: WEATHER_SETTINGS_VERSION,
+      servicing4830: datasetVersion(datasets.servicing4830, SERVICING_STORE_VERSION),
+    },
+  };
+}
+
+export function combinedBackupExport(storage = getStorage(), now = new Date(), options = {}) {
+  assertCompleteCombinedBackupAllowed(storage, COMBINED_BACKUP_VERSION);
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const normalizeWorkNotes = options.normalizeWorkNotes ?? normalizeWorkNotesData;
+  if (typeof normalizeWorkNotes !== "function") {
+    throw new TypeError("A Work Notes normalizer must be a function.");
+  }
+  const parseOrNull = (key, normalize) => {
+    try {
+      const raw = storage.getItem(key);
+      if (raw === null) return null;
+      return normalize(JSON.parse(raw));
+    } catch (cause) {
+      const error = new TypeError(`Cannot create a backup because ${key} contains unreadable data or an invalid schema.`);
+      error.cause = cause;
+      error.key = key;
+      throw error;
+    }
+  };
+  const datasets = {
+    paddocks: parseOrNull(PADDOCKS_KEY, normalizeStoredPaddockStore),
+    paddockLibrary: parseOrNull(PADDOCK_LIBRARY_KEY, normalizeStoredPaddockLibrary),
+    workNotes: parseOrNull(WORK_NOTES_KEY, (value) => {
+      assertSupportedVersion(value, WORK_NOTES_VERSION, "Work Notes");
+      return normalizeWorkNotesData(normalizeWorkNotes(cloneJson(value)));
+    }),
+    profile: parseOrNull(PROFILE_KEY, normalizeProfileData),
+    propertySettings: parseOrNull(PROPERTY_SETTINGS_KEY, (value) => {
+      const inspected = inspectPropertySettings(JSON.stringify(value));
+      if (inspected.state !== "ready") throw new TypeError("Property settings are not in a verified canonical form.");
+      return inspected.data;
+    }),
+    weatherSettings: parseOrNull(WEATHER_SETTINGS_KEY, normalizeWeatherSettingsData),
+    servicing4830: parseOrNull(SERVICING_KEY, normalizeServicingStore),
+  };
+  if (datasets.propertySettings === null) datasets.propertySettings = normalizePropertySettings({});
+  const payload = {
+    format: "pallathorpe-combined-backup",
+    version: COMBINED_BACKUP_VERSION,
+    generatedAt: now.toISOString(),
+    metadata: normalizedBackupMetadata(options, datasets),
+    ...datasets,
+  };
+  return {
+    filename: `pallathorpe-combined-backup_${date}.json`,
+    text: `${JSON.stringify(payload, null, 2)}\n`,
+    payload,
+  };
+}
+
+const PREPARED_RESTORE = Symbol("prepared-combined-backup-restore");
+const RESTORE_DATASETS = Object.freeze([
+  { name: "paddocks", key: PADDOCKS_KEY, version: PADDOCK_STORE_VERSION },
+  {
+    name: "paddockLibrary",
+    key: PADDOCK_LIBRARY_KEY,
+    version: PADDOCK_LIBRARY_VERSION,
+    introducedInBackup: 3,
+  },
+  { name: "workNotes", key: WORK_NOTES_KEY, version: WORK_NOTES_VERSION },
+  { name: "profile", key: PROFILE_KEY, version: PROFILE_VERSION },
+  { name: "weatherSettings", key: WEATHER_SETTINGS_KEY, version: WEATHER_SETTINGS_VERSION },
+  {
+    name: "servicing4830",
+    key: SERVICING_KEY,
+    version: SERVICING_STORE_VERSION,
+    introducedInBackup: 4,
+  },
+  {
+    name: "propertySettings",
+    key: PROPERTY_SETTINGS_KEY,
+    version: PROPERTY_SETTINGS_VERSION,
+    introducedInBackup: 5,
+  },
+]);
+
+function parseCombinedBackupInput(input) {
+  if (typeof input === "string") return JSON.parse(input);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("Combined backup must contain a JSON object.");
+  }
+  return cloneJson(input);
+}
+
+function validateBackupMetadata(metadata, payload, backupVersion) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    throw new TypeError(`Combined backup v${backupVersion} is missing metadata.`);
+  }
+  if (!nullableText(metadata.channel)) {
+    throw new TypeError(`Combined backup v${backupVersion} is missing its channel.`);
+  }
+  if (metadata.origin !== null && metadata.origin !== undefined && !nullableText(metadata.origin)) {
+    throw new TypeError(`Combined backup v${backupVersion} has an invalid origin.`);
+  }
+  if (!metadata.datasetVersions || typeof metadata.datasetVersions !== "object" || Array.isArray(metadata.datasetVersions)) {
+    throw new TypeError(`Combined backup v${backupVersion} is missing dataset versions.`);
+  }
+  for (const dataset of RESTORE_DATASETS) {
+    if (backupVersion < (dataset.introducedInBackup || 1)) continue;
+    if (!Object.hasOwn(payload, dataset.name)) continue;
+    const version = metadata.datasetVersions[dataset.name];
+    if (!Number.isInteger(version) || version < 1) {
+      throw new TypeError(`Combined backup has an invalid ${dataset.name} dataset version.`);
+    }
+    if (version > dataset.version) {
+      throw new UnsupportedDataVersionError(
+        `Combined backup ${dataset.name} dataset`,
+        version,
+        dataset.version,
+      );
+    }
+  }
+}
+
+/**
+ * Fully validates and normalizes a combined backup without changing storage.
+ * Pass Work Notes' authoritative normalizeBackup function as normalizeWorkNotes
+ * when this API is called from the integrated application.
+ */
+export function prepareCombinedBackupRestore(input, options = {}) {
+  const payload = parseCombinedBackupInput(input);
+  if (payload.format !== "pallathorpe-combined-backup") {
+    throw new TypeError("That file is not a Pallathorpe combined backup.");
+  }
+  const backupVersion = assertSupportedVersion(payload, COMBINED_BACKUP_VERSION, "Combined backup");
+  if (backupVersion >= 2) {
+    validateBackupMetadata(payload.metadata, payload, backupVersion);
+  }
+  if (!Object.hasOwn(payload, "paddocks") || !Object.hasOwn(payload, "workNotes")) {
+    throw new TypeError("Combined backup is missing paddocks or Work Notes.");
+  }
+  if (backupVersion >= 3 && !Object.hasOwn(payload, "paddockLibrary")) {
+    throw new TypeError("Combined backup v3 is missing its Paddock Library.");
+  }
+  if (backupVersion >= 4 && !Object.hasOwn(payload, "servicing4830")) {
+    throw new TypeError("Combined backup v4 is missing its 4830 Servicing dataset.");
+  }
+  if (backupVersion >= 5 && !Object.hasOwn(payload, "propertySettings")) {
+    throw new TypeError("Combined backup v5 is missing its property settings dataset.");
+  }
+
+  const normalizeWorkNotes = options.normalizeWorkNotes ?? normalizeWorkNotesData;
+  if (typeof normalizeWorkNotes !== "function") {
+    throw new TypeError("A Work Notes normalizer must be a function.");
+  }
+
+  const datasets = {};
+  const skippedLegacyNullDatasets = [];
+  for (const dataset of RESTORE_DATASETS) {
+    if (backupVersion < (dataset.introducedInBackup || 1)) continue;
+    if (!Object.hasOwn(payload, dataset.name)) continue;
+    const value = payload[dataset.name];
+    if (value === null) {
+      if (backupVersion === 1) {
+        skippedLegacyNullDatasets.push(dataset.name);
+        continue;
+      }
+      if (dataset.name === "paddocks") {
+        datasets.paddocks = normalizePaddockStore({
+          version: PADDOCK_STORE_VERSION,
+          paddocks: [],
+          lastPaddockId: null,
+          runs: [],
+          activeRunId: null,
+        });
+        continue;
+      }
+      if (dataset.name === "paddockLibrary") {
+        datasets.paddockLibrary = normalizePaddockLibraryData({
+          version: PADDOCK_LIBRARY_VERSION,
+          entries: [],
+        });
+        continue;
+      }
+      if (dataset.name === "workNotes") {
+        datasets.workNotes = normalizeWorkNotesData(normalizeWorkNotes({
+          version: WORK_NOTES_VERSION,
+          notes: {},
+          copied: {},
+          followUps: [],
+        }));
+        continue;
+      }
+      if (dataset.name === "servicing4830") {
+        datasets.servicing4830 = emptyServicingStore();
+        continue;
+      }
+      if (dataset.name === "propertySettings") {
+        datasets.propertySettings = null;
+        continue;
+      }
+      datasets[dataset.name] = null;
+      continue;
+    }
+    if (dataset.name === "paddocks") {
+      datasets.paddocks = normalizeStoredPaddockStore(value);
+    } else if (dataset.name === "paddockLibrary") {
+      datasets.paddockLibrary = normalizeStoredPaddockLibrary(value);
+    } else if (dataset.name === "workNotes") {
+      assertSupportedVersion(value, WORK_NOTES_VERSION, "Work Notes");
+      datasets.workNotes = normalizeWorkNotesData(normalizeWorkNotes(cloneJson(value)));
+    } else if (dataset.name === "profile") {
+      datasets.profile = normalizeProfileData(value);
+    } else if (dataset.name === "servicing4830") {
+      datasets.servicing4830 = normalizeServicingStore(value);
+    } else if (dataset.name === "propertySettings") {
+      if (inspectPropertySettings(JSON.stringify(value)).state !== "ready") throw new TypeError("Combined backup property settings are invalid.");
+      datasets.propertySettings = normalizePropertySettings(value);
+    } else {
+      datasets.weatherSettings = normalizeWeatherSettingsData(value);
+    }
+  }
+  if (Object.keys(datasets).length === 0) {
+    throw new TypeError("This legacy combined backup contains no dataset that can be restored safely.");
+  }
+
+  const prepared = {
+    format: payload.format,
+    backupVersion,
+    generatedAt: text(payload.generatedAt) || null,
+    metadata: backupVersion >= 2 ? cloneJson(payload.metadata) : null,
+    datasets,
+    skippedLegacyNullDatasets,
+  };
+  Object.defineProperty(prepared, PREPARED_RESTORE, { value: true });
+  return deepFreezeJson(prepared);
+}
+
+function restoreTimestamp(now) {
+  const parsed = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(parsed.getTime())) throw new TypeError("A valid restore time is required.");
+  return parsed.toISOString();
+}
+
+function writeRawVerified(storage, key, raw) {
+  if (raw === null) {
+    storage.removeItem(key);
+    if (storage.getItem(key) !== null) throw new Error(`Could not verify removal of ${key}.`);
+    return;
+  }
+  storage.setItem(key, raw);
+  if (storage.getItem(key) !== raw) throw new Error(`Could not verify ${key}.`);
+}
+
+function availableRecoveryKey(storage, restoredAt) {
+  const timestamp = restoredAt.replace(/[^0-9TZ]/g, "-");
+  const base = `${PRE_RESTORE_RECOVERY_PREFIX}${timestamp}`;
+  let key = base;
+  let suffix = 2;
+  while (storage.getItem(key) !== null) {
+    key = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return key;
+}
+
+function inspectPreRestoreRecoveryEntry(key, raw) {
+  if (typeof raw !== "string") return null;
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.format !== "pallathorpe-combined-pre-restore-recovery" || value.version !== 1) return null;
+  if (typeof value.capturedAt !== "string") return null;
+  const captured = new Date(value.capturedAt);
+  if (Number.isNaN(captured.getTime()) || captured.toISOString() !== value.capturedAt) return null;
+  if (!value.sourceBackup || typeof value.sourceBackup !== "object" || Array.isArray(value.sourceBackup)) return null;
+  if (
+    !Number.isInteger(value.sourceBackup.version)
+    || value.sourceBackup.version < 1
+    || value.sourceBackup.version > COMBINED_BACKUP_VERSION
+  ) return null;
+  if (!value.rawByKey || typeof value.rawByKey !== "object" || Array.isArray(value.rawByKey)) return null;
+  const rawKeys = Object.keys(value.rawByKey);
+  const allowedKeys = new Set(RESTORE_DATASETS.map((dataset) => dataset.key));
+  if (
+    rawKeys.length === 0
+    || rawKeys.some((rawKey) => !allowedKeys.has(rawKey))
+    || rawKeys.some((rawKey) => value.rawByKey[rawKey] !== null && typeof value.rawByKey[rawKey] !== "string")
+  ) return null;
+
+  const token = value.capturedAt.replace(/[^0-9TZ]/g, "-");
+  const baseKey = `${PRE_RESTORE_RECOVERY_PREFIX}${token}`;
+  let collision = 1;
+  if (key !== baseKey) {
+    if (!key.startsWith(`${baseKey}-`)) return null;
+    const suffix = key.slice(baseKey.length + 1);
+    if (!/^(?:[2-9]|[1-9]\d+)$/.test(suffix)) return null;
+    collision = Number(suffix);
+    if (!Number.isSafeInteger(collision)) return null;
+  }
+  return {
+    key,
+    capturedAt: value.capturedAt,
+    capturedTime: captured.getTime(),
+    collision,
+    filename: `pallathorpe-combined-pre-restore-recovery_${key.slice(PRE_RESTORE_RECOVERY_PREFIX.length)}.json`,
+    text: raw,
+  };
+}
+
+/**
+ * Finds the latest verified pre-restore wrapper without rewriting, deleting or
+ * normalizing any recovery record. Malformed entries are left untouched.
+ */
+export function findLatestPreRestoreRecovery(storage = getStorage()) {
+  const candidates = [];
+  try {
+    if (!storage || !Number.isInteger(storage.length) || typeof storage.key !== "function") return null;
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (typeof key !== "string" || !key.startsWith(PRE_RESTORE_RECOVERY_PREFIX)) continue;
+      let raw;
+      try {
+        raw = storage.getItem(key);
+      } catch {
+        continue;
+      }
+      const candidate = inspectPreRestoreRecoveryEntry(key, raw);
+      if (candidate) candidates.push(candidate);
+    }
+  } catch {
+    return null;
+  }
+  candidates.sort((left, right) =>
+    right.capturedTime - left.capturedTime
+    || right.collision - left.collision
+    || right.key.localeCompare(left.key));
+  const latest = candidates[0];
+  if (!latest) return null;
+  return Object.freeze({
+    key: latest.key,
+    capturedAt: latest.capturedAt,
+    filename: latest.filename,
+    text: latest.text,
+  });
+}
+
+/**
+ * Applies a prepared backup as one local transaction. A verified raw recovery
+ * snapshot is written before the first target change; any later failure rolls
+ * every included target back to its exact prior raw value.
+ */
+export function restoreCombinedBackup(
+  prepared,
+  storage = getStorage(),
+  now = new Date(),
+) {
+  if (!prepared || prepared[PREPARED_RESTORE] !== true) {
+    throw new TypeError("Prepare and validate the combined backup before restoring it.");
+  }
+  const restoredAt = restoreTimestamp(now);
+  const epochKey = `${COMBINED_PREFIX}:restore-epoch`;
+  const previousEpoch = storage.getItem(epochKey);
+  const restoredEpoch = `${restoredAt}:${globalThis.crypto.randomUUID()}`;
+  const targets = RESTORE_DATASETS.filter((dataset) => Object.hasOwn(prepared.datasets, dataset.name));
+  if (targets.some(({ name }) => name === "servicing4830")) assertServicingWritesEnabled(storage);
+  const previousRaw = Object.fromEntries(targets.map(({ key }) => [key, storage.getItem(key)]));
+  const nextRaw = Object.fromEntries(targets.map(({ name, key }) => [
+    key,
+    prepared.datasets[name] === null ? null : JSON.stringify(prepared.datasets[name]),
+  ]));
+
+  const recoveryKey = availableRecoveryKey(storage, restoredAt);
+  writeVerified(storage, recoveryKey, {
+    format: "pallathorpe-combined-pre-restore-recovery",
+    version: 1,
+    capturedAt: restoredAt,
+    sourceBackup: {
+      version: prepared.backupVersion,
+      generatedAt: prepared.generatedAt,
+      metadata: prepared.metadata,
+    },
+    rawByKey: previousRaw,
+  });
+
+  try {
+    for (const { key } of targets) writeRawVerified(storage, key, nextRaw[key]);
+    // Old web restores change only their named datasets. New records remain exact,
+    // while this epoch invalidates draft/Undo commands captured before any restore.
+    writeRawVerified(storage, epochKey, restoredEpoch);
+  } catch (cause) {
+    const rollbackErrors = [];
+    for (const { key } of [{key:epochKey}, ...[...targets].reverse()]) {
+      try {
+        writeRawVerified(storage, key, key === epochKey ? previousEpoch : previousRaw[key]);
+      } catch (error) {
+        rollbackErrors.push({ key, error });
+      }
+    }
+    const error = new Error(
+      rollbackErrors.length
+        ? "Combined backup restore failed and one or more records could not be rolled back."
+        : "Combined backup restore failed; all records were rolled back.",
+    );
+    error.cause = cause;
+    error.recoveryKey = recoveryKey;
+    error.rollbackErrors = rollbackErrors;
+    throw error;
+  }
+
+  return {
+    status: "restored",
+    restoredAt,
+    restoredEpoch,
+    recoveryKey,
+    backupVersion: prepared.backupVersion,
+    restoredKeys: targets.map(({ key }) => key),
+  };
+}

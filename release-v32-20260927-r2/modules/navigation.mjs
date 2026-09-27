@@ -1,0 +1,141 @@
+const SPRAY_TABS = new Set(["calculator", "run", "paddocks"]);
+const WORK_NOTES_TABS = new Set(["notes", "summary", "followups"]);
+
+export const DEFAULT_NAVIGATION = Object.freeze({
+  version: 1,
+  last: Object.freeze({ section: "spray", tab: "calculator" }),
+  tabs: Object.freeze({ spray: "calculator", workNotes: "notes" }),
+});
+
+export function navigationStorageKey(channel = "base") {
+  const safeChannel = String(channel || "base")
+    .trim()
+    .toLocaleLowerCase("en-AU")
+    .replace(/[^a-z0-9-]+/g, "-") || "base";
+  return `pallathorpe-combined:v1:navigation:${safeChannel}`;
+}
+
+export function normalizeNavigation(value) {
+  const sprayTab = SPRAY_TABS.has(value?.tabs?.spray)
+    ? value.tabs.spray
+    : DEFAULT_NAVIGATION.tabs.spray;
+  const workNotesTab = WORK_NOTES_TABS.has(value?.tabs?.workNotes)
+    ? value.tabs.workNotes
+    : DEFAULT_NAVIGATION.tabs.workNotes;
+  const candidate = normalizeRoute(value?.last, {
+    tabs: { spray: sprayTab, workNotes: workNotesTab },
+  });
+  const last = candidate.section === "home"
+    ? { ...DEFAULT_NAVIGATION.last }
+    : candidate;
+  return {
+    version: 1,
+    last,
+    tabs: { spray: sprayTab, workNotes: workNotesTab },
+  };
+}
+
+export function loadNavigation(storage, key) {
+  try {
+    const raw = storage?.getItem?.(key);
+    return normalizeNavigation(raw ? JSON.parse(raw) : null);
+  } catch {
+    return normalizeNavigation(null);
+  }
+}
+
+export function persistNavigation(storage, key, value) {
+  const normalized = normalizeNavigation(value);
+  storage?.setItem?.(key, JSON.stringify(normalized));
+  return normalized;
+}
+
+export function normalizeRoute(route, navigation = DEFAULT_NAVIGATION) {
+  const section = route?.section;
+  if (section === "spray") {
+    const tab = SPRAY_TABS.has(route?.tab)
+      ? route.tab
+      : SPRAY_TABS.has(navigation?.tabs?.spray)
+        ? navigation.tabs.spray
+        : "calculator";
+    return { section, tab };
+  }
+  if (section === "work-notes") {
+    const tab = WORK_NOTES_TABS.has(route?.tab)
+      ? route.tab
+      : WORK_NOTES_TABS.has(navigation?.tabs?.workNotes)
+        ? navigation.tabs.workNotes
+        : "notes";
+    return { section, tab };
+  }
+  if (section === "weather") return { section: "weather", tab: null };
+  if (section === "servicing") return { section: "servicing", tab: null };
+  if (section === "service-workspace") return { section: "service-workspace", tab: null };
+  if (section === "settings") return { section: "settings", tab: null };
+  if (section === "notebook") return { section: "notebook", tab: null };
+  return { section: "home", tab: null };
+}
+
+export function rememberRoute(navigation, route) {
+  const current = normalizeNavigation(navigation);
+  const selected = normalizeRoute(route, current);
+  if (selected.section === "home") return current;
+  const tabs = { ...current.tabs };
+  if (selected.section === "spray") tabs.spray = selected.tab;
+  if (selected.section === "work-notes") tabs.workNotes = selected.tab;
+  return { version: 1, last: selected, tabs };
+}
+
+export function routeFromHash(hash, navigation = DEFAULT_NAVIGATION) {
+  const token = String(hash || "").replace(/^#\/?/, "").replace(/\/$/, "");
+  if (!token || token === "home") return { section: "home", tab: null };
+  if (token === "calculator" || token === "run" || token === "paddocks") {
+    return { section: "spray", tab: token };
+  }
+  if (token === "spray") return normalizeRoute({ section: "spray" }, navigation);
+  if (token.startsWith("spray/")) {
+    return normalizeRoute({ section: "spray", tab: token.slice(6) }, navigation);
+  }
+  if (token === "weather") return { section: "weather", tab: null };
+  if (token === "servicing") return { section: "servicing", tab: null };
+  if (token === "service-workspace") return { section: "service-workspace", tab: null };
+  if (token === "settings") return { section: "settings", tab: null };
+  if (token === "notebook") return { section: "notebook", tab: null };
+  if (token === "work-notes") return normalizeRoute({ section: "work-notes" }, navigation);
+  if (token.startsWith("work-notes/")) {
+    return normalizeRoute({ section: "work-notes", tab: token.slice(11) }, navigation);
+  }
+  return { section: "home", tab: null };
+}
+
+export function hashForRoute(route) {
+  const selected = normalizeRoute(route);
+  if (selected.section === "home") return "#/home";
+  if (selected.section === "weather") return "#/weather";
+  if (selected.section === "servicing") return "#/servicing";
+  if (selected.section === "service-workspace") return "#/service-workspace";
+  if (selected.section === "settings") return "#/settings";
+  if (selected.section === "notebook") return "#/notebook";
+  return `#/${selected.section}/${selected.tab}`;
+}
+
+export function continueCopy(route) {
+  const selected = normalizeRoute(route);
+  if (selected.section === "notebook") return { title: "Continue Notebook", detail: "Notes and checklists" };
+  if (selected.section === "weather") {
+    return { title: "Continue Weather Shortcuts", detail: "Return to your saved weather links" };
+  }
+  if (selected.section === "work-notes") {
+    const labels = { notes: "Notes", summary: "Summary", followups: "To-do list" };
+    return { title: "Continue Work Diary", detail: labels[selected.tab] };
+  }
+  if (selected.section === "settings") {
+    return { title: "Continue Settings", detail: "Help, backup and app settings" };
+  }
+  if (selected.section === "servicing") {
+    return { title: "Continue 4830 Servicing", detail: "Existing checklist and service records" };
+  }
+  if (selected.section === "service-workspace") return { title: "Continue equipment & service templates", detail: "Equipment register and editable checklists" };
+  const labels = { calculator: "Calculator", run: "Buffers", paddocks: "Paddocks" };
+  return { title: "Continue Spray Operations", detail: labels[selected.tab] };
+}

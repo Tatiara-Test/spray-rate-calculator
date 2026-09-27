@@ -1,104 +1,155 @@
-const CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-";
-const LEGACY_CACHE_PREFIX = "tatiara-test-spray-rate-calculator-shell-legacy-";
-const CACHE_NAME = `${CACHE_PREFIX}v31-2026-09-23-operator-improvements-r1`;
+const CACHE_NAME = "tatiara-test-spray-rate-calculator-shell-v32-2026-09-27-web-parity-r2";
 const APP_SHELL = [
-  "./",
-  "./index.html",
+  "./.nojekyll",
   "./app.js",
-  "./config.mjs",
-  "./manifest.webmanifest",
-  "./brand-mark.png",
-  "./farmers-assistant-emblem.png",
   "./assets/pallathorpe-app-guide.pdf",
-  "./robots.txt",
-  "./styles/shell.css",
-  "./styles/spray.css",
-  "./styles/settings.css",
-  "./styles/servicing.css",
-  "./styles/weather.css",
-  "./styles/work-notes.css",
-  "./modules/storage.mjs",
+  "./brand-mark.png",
+  "./config.mjs",
+  "./farmers-assistant-emblem.png",
+  "./index.html",
+  "./manifest.webmanifest",
   "./modules/navigation.mjs",
-  "./modules/product-records.mjs",
   "./modules/paddock-balance.mjs",
-  "./modules/paddock-lifecycle.mjs",
-  "./modules/paddock-library.mjs",
   "./modules/paddock-export.mjs",
+  "./modules/paddock-library.mjs",
+  "./modules/paddock-lifecycle.mjs",
   "./modules/paddock-runs.mjs",
   "./modules/pdf-lib-loader.mjs",
-  "./modules/share-files.mjs",
+  "./modules/product-records.mjs",
   "./modules/property-settings.mjs",
-  "./modules/spray-template.mjs",
-  "./modules/spray-app.mjs",
-  "./modules/spray-recovery.mjs",
-  "./modules/settings-template.mjs",
-  "./modules/settings-app.mjs",
   "./modules/servicing/4830-service-definition.mjs",
+  "./modules/servicing/servicing-adapter.mjs",
+  "./modules/servicing/servicing-app.mjs",
+  "./modules/servicing/servicing-export.mjs",
+  "./modules/servicing/servicing-layout-4830.mjs",
   "./modules/servicing/servicing-records.mjs",
   "./modules/servicing/servicing-store.mjs",
-  "./modules/servicing/servicing-layout-4830.mjs",
-  "./modules/servicing/servicing-export.mjs",
   "./modules/servicing/servicing-template.mjs",
-  "./modules/servicing/servicing-app.mjs",
-  "./modules/servicing/servicing-adapter.mjs",
-  "./modules/work-notes-ai-demo.mjs",
-  "./modules/work-notes-ai-client.mjs",
-  "./modules/work-notes-ai.mjs",
-  "./modules/work-notes-template.mjs",
-  "./modules/work-notes-logic.mjs",
-  "./modules/work-notes-export.mjs",
-  "./modules/work-notes-app.mjs",
+  "./modules/settings-app.mjs",
+  "./modules/settings-template.mjs",
+  "./modules/share-files.mjs",
+  "./modules/spray-app.mjs",
+  "./modules/spray-recovery.mjs",
+  "./modules/spray-template.mjs",
+  "./modules/storage.mjs",
+  "./modules/weather/cache.mjs",
+  "./modules/weather/chart.mjs",
+  "./modules/weather/fixture-provider.mjs",
   "./modules/weather/links.mjs",
+  "./modules/weather/open-meteo-provider.mjs",
+  "./modules/weather/provider.mjs",
   "./modules/weather/weather-app.mjs",
-  "./vendor/pdf-lib.min.js",
+  "./modules/work-notes-ai-client.mjs",
+  "./modules/work-notes-ai-demo.mjs",
+  "./modules/work-notes-ai.mjs",
+  "./modules/work-notes-app.mjs",
+  "./modules/work-notes-export.mjs",
+  "./modules/work-notes-logic.mjs",
+  "./modules/work-notes-template.mjs",
+  "./release-v32-20260927-r2/.nojekyll",
+  "./release-v32-20260927-r2/app.js",
+  "./release-v32-20260927-r2/assets/pallathorpe-app-guide.pdf",
+  "./release-v32-20260927-r2/bootstrap.mjs",
+  "./release-v32-20260927-r2/brand-mark.png",
+  "./release-v32-20260927-r2/config.mjs",
+  "./release-v32-20260927-r2/farmers-assistant-emblem.png",
+  "./release-v32-20260927-r2/manifest.webmanifest",
+  "./release-v32-20260927-r2/modules/appearance.mjs",
+  "./release-v32-20260927-r2/modules/browser-storage.mjs",
+  "./release-v32-20260927-r2/modules/durable-storage.mjs",
+  "./release-v32-20260927-r2/modules/native-backup-ui.mjs",
+  "./release-v32-20260927-r2/modules/native-backup.mjs",
+  "./release-v32-20260927-r2/modules/native-files.mjs",
+  "./release-v32-20260927-r2/modules/navigation.mjs",
+  "./release-v32-20260927-r2/modules/notebook-app.mjs",
+  "./release-v32-20260927-r2/modules/notebook-model.mjs",
+  "./release-v32-20260927-r2/modules/notebook-storage.mjs",
+  "./release-v32-20260927-r2/modules/paddock-balance.mjs",
+  "./release-v32-20260927-r2/modules/paddock-export.mjs",
+  "./release-v32-20260927-r2/modules/paddock-library.mjs",
+  "./release-v32-20260927-r2/modules/paddock-lifecycle.mjs",
+  "./release-v32-20260927-r2/modules/paddock-running-summary.mjs",
+  "./release-v32-20260927-r2/modules/paddock-runs.mjs",
+  "./release-v32-20260927-r2/modules/pdf-lib-loader.mjs",
+  "./release-v32-20260927-r2/modules/product-records.mjs",
+  "./release-v32-20260927-r2/modules/property-settings.mjs",
+  "./release-v32-20260927-r2/modules/service-navigation.mjs",
+  "./release-v32-20260927-r2/modules/service-template-pdf.mjs",
+  "./release-v32-20260927-r2/modules/service-template-report.mjs",
+  "./release-v32-20260927-r2/modules/service-workflow-app.mjs",
+  "./release-v32-20260927-r2/modules/service-workflow-model.mjs",
+  "./release-v32-20260927-r2/modules/service-workflow-storage.mjs",
+  "./release-v32-20260927-r2/modules/servicing-log-app.mjs",
+  "./release-v32-20260927-r2/modules/servicing-log-model.mjs",
+  "./release-v32-20260927-r2/modules/servicing-log-storage.mjs",
+  "./release-v32-20260927-r2/modules/servicing-workspace-app.mjs",
+  "./release-v32-20260927-r2/modules/servicing/4830-service-definition.mjs",
+  "./release-v32-20260927-r2/modules/servicing/servicing-adapter.mjs",
+  "./release-v32-20260927-r2/modules/servicing/servicing-app.mjs",
+  "./release-v32-20260927-r2/modules/servicing/servicing-export.mjs",
+  "./release-v32-20260927-r2/modules/servicing/servicing-layout-4830.mjs",
+  "./release-v32-20260927-r2/modules/servicing/servicing-records.mjs",
+  "./release-v32-20260927-r2/modules/servicing/servicing-store.mjs",
+  "./release-v32-20260927-r2/modules/servicing/servicing-template.mjs",
+  "./release-v32-20260927-r2/modules/settings-app.mjs",
+  "./release-v32-20260927-r2/modules/settings-template.mjs",
+  "./release-v32-20260927-r2/modules/share-files.mjs",
+  "./release-v32-20260927-r2/modules/spray-app.mjs",
+  "./release-v32-20260927-r2/modules/spray-preferences-ui.mjs",
+  "./release-v32-20260927-r2/modules/spray-preferences.mjs",
+  "./release-v32-20260927-r2/modules/spray-recovery.mjs",
+  "./release-v32-20260927-r2/modules/spray-template.mjs",
+  "./release-v32-20260927-r2/modules/storage-conflict-ui.mjs",
+  "./release-v32-20260927-r2/modules/storage.mjs",
+  "./release-v32-20260927-r2/modules/weather/cache.mjs",
+  "./release-v32-20260927-r2/modules/weather/chart.mjs",
+  "./release-v32-20260927-r2/modules/weather/fixture-provider.mjs",
+  "./release-v32-20260927-r2/modules/weather/links.mjs",
+  "./release-v32-20260927-r2/modules/weather/open-meteo-provider.mjs",
+  "./release-v32-20260927-r2/modules/weather/provider.mjs",
+  "./release-v32-20260927-r2/modules/weather/weather-app.mjs",
+  "./release-v32-20260927-r2/modules/work-notes-ai-client.mjs",
+  "./release-v32-20260927-r2/modules/work-notes-ai-demo.mjs",
+  "./release-v32-20260927-r2/modules/work-notes-ai.mjs",
+  "./release-v32-20260927-r2/modules/work-notes-app.mjs",
+  "./release-v32-20260927-r2/modules/work-notes-export.mjs",
+  "./release-v32-20260927-r2/modules/work-notes-logic.mjs",
+  "./release-v32-20260927-r2/modules/work-notes-template.mjs",
+  "./release-v32-20260927-r2/robots.txt",
+  "./release-v32-20260927-r2/styles/appearance.css",
+  "./release-v32-20260927-r2/styles/notebook.css",
+  "./release-v32-20260927-r2/styles/service-template-report.css",
+  "./release-v32-20260927-r2/styles/service-workflow.css",
+  "./release-v32-20260927-r2/styles/servicing-log.css",
+  "./release-v32-20260927-r2/styles/servicing.css",
+  "./release-v32-20260927-r2/styles/settings.css",
+  "./release-v32-20260927-r2/styles/shell.css",
+  "./release-v32-20260927-r2/styles/spray.css",
+  "./release-v32-20260927-r2/styles/weather.css",
+  "./release-v32-20260927-r2/styles/work-notes.css",
+  "./release-v32-20260927-r2/vendor/pdf-lib.LICENSE.md",
+  "./release-v32-20260927-r2/vendor/pdf-lib.min.js",
+  "./robots.txt",
+  "./styles/servicing.css",
+  "./styles/settings.css",
+  "./styles/shell.css",
+  "./styles/spray.css",
+  "./styles/weather.css",
+  "./styles/work-notes.css",
   "./vendor/pdf-lib.LICENSE.md",
+  "./vendor/pdf-lib.min.js"
 ];
-
-self.addEventListener("install", (event) => {
-  const freshShellRequests = APP_SHELL.map((asset) => new Request(asset, { cache: "reload" }));
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(freshShellRequests)));
-});
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(
-        keys
-          .filter((key) =>
-            (key.startsWith(CACHE_PREFIX) || key.startsWith(LEGACY_CACHE_PREFIX)) &&
-            key !== CACHE_NAME,
-          )
-          .map((key) => caches.delete(key)),
-      ))
-      .then(() => self.clients.claim()),
-  );
-});
-
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
-});
-
-self.addEventListener("fetch", (event) => {
-  const request = event.request;
-  if (request.method !== "GET") return;
-  const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
-
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", response.clone()));
-          return response;
-        })
-        .catch(() => caches.match("./index.html")),
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
-      return response;
-    })),
-  );
+self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_SHELL.map(url=>new Request(url,{cache:'reload'}))))));
+// Retain prior caches for already-open legacy tabs and their lazy imports.
+self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
+self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting();});
+self.addEventListener('fetch',event=>{
+ const request=event.request,url=new URL(request.url);
+ if(request.method!=='GET'||url.origin!==self.location.origin)return;
+ event.respondWith((async()=>{
+  const cache=await caches.open(CACHE_NAME);
+  // Navigation is pinned to this worker's installed generation.
+  if(request.mode==='navigate')return (await cache.match('./index.html'))||fetch(request);
+  return (await cache.match(request))||fetch(request);
+ })());
 });

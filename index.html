@@ -7,14 +7,20 @@
     <meta name="theme-color" content="#236b38" />
     <meta name="description" content="Offline spray calculations, paddock records and work notes for Pallathorpe Enterprises." />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" href="./brand-mark.png" />
-    <link rel="apple-touch-icon" href="./brand-mark.png" />
-    <link rel="stylesheet" href="./styles/shell.css" />
-    <title>Tatiara Test | Pallathorpe Spray Rate Calculator</title>
+    <link rel="icon" href="./release-v32-20260927-r2/brand-mark.png" />
+    <link rel="apple-touch-icon" href="./release-v32-20260927-r2/brand-mark.png" />
+    <link rel="stylesheet" href="./release-v32-20260927-r2/styles/shell.css" />
+    <link rel="stylesheet" href="./release-v32-20260927-r2/styles/appearance.css" />
+    <link rel="stylesheet" href="./release-v32-20260927-r2/styles/notebook.css" />
+    <link rel="stylesheet" href="./release-v32-20260927-r2/styles/servicing-log.css" />
+    <link rel="stylesheet" href="./release-v32-20260927-r2/styles/service-workflow.css" />
+    <link rel="stylesheet" href="./release-v32-20260927-r2/styles/service-template-report.css" />
+    <title>Farmhand 0.8 — Tatiara TEST</title>
   </head>
   <body>
-    <aside class="test-channel-banner" aria-label="Test version"><strong>Tatiara Test</strong><span>Testing copy - records stay on this test address.</span></aside>
+    <aside class="test-channel-banner" aria-label="Test edition"><strong>TATIARA TEST</strong><span>Farmhand 0.8 · Records are stored in this browser. Keep regular backup files.</span></aside>
     <aside id="migration-notice" class="notice" hidden role="status"></aside>
+    <aside id="navigation-warning" class="notice" hidden role="alert"></aside>
     <aside id="update-banner" class="update-banner" hidden>
       <span><strong>New version ready</strong><small>Your current work will stay open until you choose to update.</small></span>
       <button id="update-now" type="button">Update now</button>
@@ -31,7 +37,7 @@
       <section class="combined-panel home-panel" data-panel="home" aria-labelledby="main-menu-heading">
         <div class="home-shell">
           <header class="home-header">
-            <img class="farmer-assistant-emblem" src="./farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="72" height="72" />
+            <img class="farmer-assistant-emblem" src="./release-v32-20260927-r2/farmers-assistant-emblem.png" alt="Farmer’s Assistant FH emblem" width="72" height="72" />
             <div><p id="home-farm-name">Pallathorpe Enterprises</p><h1 id="main-menu-heading">What would you like to do?</h1></div>
           </header>
           <button id="continue-button" class="continue-card" type="button">
@@ -39,6 +45,7 @@
             <strong id="continue-title">Continue Spray Operations</strong>
             <small id="continue-detail">Calculator</small>
           </button>
+          <button id="active-work-button" class="active-work-card" type="button" hidden><span id="active-work-title"></span><small id="active-work-detail"></small></button>
           <div class="home-card-grid" aria-label="App sections">
             <button class="home-card" type="button" data-open-section="spray">
               <span class="home-card-icon" aria-hidden="true">∑</span>
@@ -50,15 +57,25 @@
               <span><strong>Weather Shortcuts</strong><small>Open your saved weather websites without a built-in forecast.</small></span>
               <b aria-hidden="true">›</b>
             </button>
-            <button class="home-card" type="button" data-open-section="work-notes">
+            <button class="home-card" type="button" data-open-section="work-notes" data-open-tab="notes">
               <span class="home-card-icon" aria-hidden="true">✓</span>
-              <span><strong>Work Notes</strong><small>Write daily notes, review a Week, Fortnight or Month and manage your to-do list.</small></span>
+              <span><strong>Work Diary</strong><small>Daily work entries and period summaries for wages.</small></span>
               <b aria-hidden="true">›</b>
             </button>
+            <button class="home-card" type="button" data-open-section="work-notes" data-open-tab="followups">
+              <span class="home-card-icon" aria-hidden="true">✓</span><span><strong>To-do list <span id="home-todo-count"></span></strong><small>Jobs that need doing.</small></span><b aria-hidden="true">›</b>
+            </button>
+            <button class="home-card" type="button" data-open-section="notebook">
+              <span class="home-card-icon" aria-hidden="true">▤</span><span><strong>Notebook</strong><small>Keep information, notes and named checklists.</small></span><b aria-hidden="true">›</b>
+            </button>
             <button class="home-card" type="button" data-open-section="servicing">
-              <span class="home-card-icon servicing-home-icon" aria-hidden="true">4830</span>
-              <span><strong>4830 Servicing</strong><small>Prepare and review offline service records when compatible writes are enabled.</small></span>
+              <span class="home-card-icon servicing-home-icon" aria-hidden="true">⚙</span>
+              <span><strong>4830 Servicing</strong><small>Existing model-specific checklist and service records.</small></span>
               <b aria-hidden="true">›</b>
+            </button>
+            <button class="home-card" type="button" data-open-section="service-workspace">
+              <span class="home-card-icon" aria-hidden="true">⚙</span>
+              <span><strong>Equipment &amp; service templates</strong><small>Equipment register, service logs and editable checklists.</small></span><b aria-hidden="true">›</b>
             </button>
             <button class="home-card" type="button" data-open-section="settings">
               <span class="home-card-icon" aria-hidden="true">⚙</span>
@@ -76,17 +93,19 @@
       <section class="combined-panel" data-panel="weather" aria-label="Weather Shortcuts" hidden>
         <div id="weather-host"></div>
       </section>
-      <section class="combined-panel" data-panel="work-notes" aria-label="Work Notes" hidden>
+      <section class="combined-panel" data-panel="work-notes" aria-label="Work Diary" hidden>
         <div id="work-notes-host"></div>
       </section>
-      <section class="combined-panel" data-panel="servicing" aria-label="4830 Servicing" hidden>
+      <section class="combined-panel" data-panel="notebook" aria-label="Notebook" hidden><div id="notebook-host"></div></section>
+      <section class="combined-panel" data-panel="servicing" aria-label="Servicing" hidden>
         <div id="servicing-host"></div>
       </section>
+      <section class="combined-panel" data-panel="service-workspace" aria-label="Equipment and service templates" hidden><div id="service-workspace-host"></div></section>
       <section class="combined-panel" data-panel="settings" aria-label="Settings" hidden>
         <div id="settings-host"></div>
       </section>
     </main>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./release-v32-20260927-r2/bootstrap.mjs"></script>
   </body>
 </html>
