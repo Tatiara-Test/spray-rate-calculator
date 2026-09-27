@@ -1,0 +1,46 @@
+/* Shared shell/shadow appearance layer. Rem scaling preserves browser zoom. */
+html { -webkit-text-size-adjust: auto; text-size-adjust: auto; }
+html[data-text-size="large"] { font-size:125%; }
+:host { -webkit-text-size-adjust:auto !important; text-size-adjust:auto; }
+html[data-appearance="dark"], :host([data-appearance="dark"]) {
+  color-scheme:dark !important;
+  --shell-page:#101813 !important; --shell-card:#1b2720 !important;
+  --shell-text:#edf4ee !important; --shell-muted:#bbcbbf !important;
+  --shell-line:#526557 !important; --shell-green:#91d9a4 !important;
+  --shell-green-strong:#b0ecc0 !important;
+  --page:#101813; --card:#1b2720; --card-muted:#25372b;
+  --text:#edf4ee; --muted:#bbcbbf; --line:#526557;
+  --green:#91d9a4; --green-dark:#b0ecc0; --green-soft:#244832;
+  --yellow:#f2ce65; --yellow-soft:#493d20;
+  --water:#edbc77; --water-soft:#493720;
+  --danger:#ffb4aa; --danger-soft:#482c2a;
+  background:var(--page); color:var(--text);
+}
+html[data-appearance="light"], :host([data-appearance="light"]) {color-scheme:light;}
+html[data-appearance="dark"] :is(.home-card,.continue-card,.section-navigation,.test-channel-banner,dialog),
+:host([data-appearance="dark"]) :is(input,select,textarea,dialog,.dialog-card,.dialog-content,.summary-day,.day-card,.note-card,.paddock-card,.tank-card,.library-card,.settings-card,.setting-card,.link-card,.weather-link,.section-tabs,.view-switch,.preference-row,details) {
+  background-color:var(--shell-card,var(--card)) !important;
+  color:var(--shell-text,var(--text)) !important;
+  border-color:var(--shell-line,var(--line)) !important;
+}
+html[data-appearance="dark"] :is(.continue-card>span,.continue-card small,.home-backup-help),
+:host([data-appearance="dark"]) :is(.muted-note,.review-help,.run-helper,.summary-date,.eyebrow,small,label) {color:var(--shell-muted,var(--muted));}
+html[data-appearance="dark"] button,
+:host([data-appearance="dark"]) button {background-color:#293f31 !important;color:#eef8f0 !important;border-color:#6f927a !important;}
+html[data-appearance="dark"] button:disabled,
+:host([data-appearance="dark"]) button:disabled {opacity:.55;}
+:host([data-appearance="dark"]) :is(.selected,[aria-selected="true"],[aria-pressed="true"]) {outline:2px solid #ace5bc;outline-offset:-3px;}
+html[data-appearance="dark"] a,:host([data-appearance="dark"]) a {color:#a8dfef;}
+:host([data-appearance="dark"]) :is(.error,.dialog-error,.danger-link,.recovery-error) {color:#ffb4aa !important;}
+:host([data-appearance="dark"]) :is(button.danger-button,button.danger-link,[data-action="delete-tank"],[data-action="clear-paddock"],[data-action="archive-paddock"]),
+html[data-appearance="dark"] button[data-action="confirm"] {background-color:#4b2525 !important;color:#ffd2cb !important;border-color:#e79b92 !important;}
+:host([data-appearance="dark"]) :is(.ai-availability,.jump-date-form) {background-color:var(--card);color:var(--text);}
+:host([data-appearance="dark"]) :is(.followup-card,.followup-card.done) {background-color:var(--card) !important;color:var(--text);border-color:var(--line);}
+:host([data-appearance="dark"]) :is(.step-number,.tab-count) {background:#36553e !important;color:#f4fff5 !important;}
+:host([data-text-size="large"]) .view-switch {overflow-x:auto;grid-template-columns:repeat(3,minmax(7.2rem,1fr));}
+:host([data-text-size="large"]) .view-switch button {white-space:nowrap;overflow-wrap:normal;word-break:normal;}
+html[data-text-size="large"] button,:host([data-text-size="large"]) :is(button,input,select,textarea) {font-size:max(1rem,1em);}
+.active-work-card {display:grid;gap:.35rem;width:100%;margin:0 0 1rem;padding:1rem;text-align:left;border:2px solid var(--shell-green,#236b38);border-radius:14px;background:var(--shell-card,#fff);color:var(--shell-text,#18231b);}
+.active-work-card[hidden] {display:none;}
+.active-work-card span {font-size:1rem;font-weight:700;}
+.active-work-card small {font-size:.9rem;line-height:1.4;}
